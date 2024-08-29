@@ -1,6 +1,6 @@
 from .config import load_database_config
 
-class BaseDbTools:
+class BaseDbToolkit:
     """Clase base que proporciona configuraciones comunes para las clases de operaciones de base de datos."""
 
     def __init__(self, db_config=None):

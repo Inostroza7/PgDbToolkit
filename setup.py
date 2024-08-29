@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="pgdbtools",
+    name="PgDbToolkit",
     version="0.1.0",
     author="Gustavo Inostroza",
     author_email="gusinostrozar@gmail.com",

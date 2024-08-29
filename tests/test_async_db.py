@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from pgdbtools import AsyncPgDbTools
+from pgdbtoolkit import AsyncPgDbTools
 
 @pytest.fixture(scope="module")
 def db_tool(create_test_db):

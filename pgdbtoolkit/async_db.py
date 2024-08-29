@@ -5,7 +5,7 @@ import pandas as pd
 from psycopg import AsyncConnection
 from contextlib import asynccontextmanager
 from .log import log
-from .base import BaseDbTools
+from .base import BaseDbToolkit
 
 ##### Context Manager para Conexiones Asíncronas #####
 
@@ -20,7 +20,7 @@ async def async_db_connection(db_config):
 
 ##### Clase para Gestión de Operaciones Asíncronas #####
 
-class AsyncPgDbTools(BaseDbTools):
+class AsyncPgDbToolkit(BaseDbToolkit):
     """Gestiona las operaciones asíncronas de la base de datos."""
 
     ##### Método para Insertar Registros #####

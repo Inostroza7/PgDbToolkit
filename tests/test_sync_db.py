@@ -1,5 +1,5 @@
 import pytest
-from pgdbtools import PgDbTools
+from pgdbtoolkit import PgDbTools
 
 @pytest.fixture(scope="module")
 def db_tool(create_test_db):

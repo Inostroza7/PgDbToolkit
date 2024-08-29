@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from pgdbtools import PgDbTools, AsyncPgDbTools
+from pgdbtoolkit import PgDbTools, AsyncPgDbTools
 
 @pytest.fixture
 def sync_db_tool():

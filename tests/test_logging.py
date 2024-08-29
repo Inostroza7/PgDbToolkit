@@ -1,6 +1,6 @@
 import logging
 import pytest
-from pgdbtools import log
+from pgdbtoolkit import log
 
 def test_logging_info(caplog):
     log.setLevel(logging.INFO)

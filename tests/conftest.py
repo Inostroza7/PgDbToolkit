@@ -1,8 +1,8 @@
 import pytest
 import psycopg
 from psycopg.rows import dict_row
-from pgdbtools.sync_db import PgDbTools
-from pgdbtools.async_db import AsyncPgDbTools
+from pgdbtoolkit.sync_db import PgDbTools
+from pgdbtoolkit.async_db import AsyncPgDbTools
 
 DATABASE_NAME = "test_db"
 USER = "test_user"

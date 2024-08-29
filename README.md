@@ -1,11 +1,11 @@
-# pgdbtools 📊
+# PgDbToolkit 📊
 
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![PostgreSQL](https://img.shields.io/badge/postgresql-✔️-blue)
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 
-`pgdbtools` es un paquete Python diseñado para gestionar operaciones en bases de datos PostgreSQL de manera eficiente, tanto de manera sincrónica como asíncrona. Este paquete es ideal para desarrolladores y equipos que buscan simplificar y optimizar la interacción con bases de datos PostgreSQL en sus proyectos.
+`PgDbToolkit` es un paquete Python diseñado para gestionar operaciones en bases de datos PostgreSQL de manera eficiente, tanto de manera sincrónica como asíncrona. Este paquete es ideal para desarrolladores y equipos que buscan simplificar y optimizar la interacción con bases de datos PostgreSQL en sus proyectos.
 
 ## Características ✨
 
@@ -17,10 +17,10 @@
 
 ## Instalación 🚀
 
-Puedes instalar `pgdbtools` desde PyPI utilizando pip:
+Puedes instalar `PgDbToolkit` desde PyPI utilizando pip:
 
 ```bash
-pip install pgdbtools
+pip install PgDbToolkit
 ```
 
 ## Uso Básico 💻
@@ -47,7 +47,7 @@ LOG_LEVEL=DEBUG
 También puedes pasar la configuración directamente en tu código como un diccionario:
 
 ```python
-from pgdbtools import PgDbTools
+from pgdbtoolkit import PgDbToolkit
 
 # Configuración personalizada
 db_config = {
@@ -59,16 +59,16 @@ db_config = {
 }
 
 # Inicializa la herramienta con la configuración personalizada
-db_tool = PgDbTools(db_config=db_config)
+db_tool = PgDbToolkit(db_config=db_config)
 ```
 
 ### 2. Ejemplo de Uso Sincrónico 🔄
 
 ```python
-from pgdbtools import PgDbTools
+from pgdbtoolkit import PgDbToolkit
 
 # Inicializa la herramienta con la configuración predeterminada o personalizada
-db_tool = PgDbTools()
+db_tool = PgDbToolkit()
 
 # Inserta un registro
 db_tool.insert_record("mi_tabla", {"columna1": "valor1", "columna2": "valor2"})
@@ -88,11 +88,11 @@ db_tool.delete_record("mi_tabla", {"columna1": "valor1"})
 
 ```python
 import asyncio
-from pgdbtools import AsyncPgDbTools
+from pgdbtoolkit import AsyncPgDbToolkit
 
 async def main():
     # Inicializa la herramienta asíncrona con la configuración predeterminada o personalizada
-    db_tool = AsyncPgDbTools()
+    db_tool = AsyncPgDbToolkit()
 
     # Inserta un registro
     await db_tool.insert_record("mi_tabla", {"columna1": "valor1", "columna2": "valor2"})
@@ -116,7 +116,7 @@ asyncio.run(main())
 El sistema de logging permite personalizar los niveles de log y decidir si se quiere guardar en un archivo o en la consola.
 
 ```python
-from pgdbtools import log
+from pgdbtoolkit import log
 
 # Cambia el nivel de logging
 log.setLevel("INFO")
@@ -148,6 +148,6 @@ Este proyecto está licenciado bajo la Licencia MIT - ver el archivo [LICENSE](L
 
 ---
 
-¡Gracias por usar `pgdbtools`! Si tienes alguna pregunta o sugerencia, no dudes en abrir un issue en el repositorio. 😊
+¡Gracias por usar `PgDbToolkit`! Si tienes alguna pregunta o sugerencia, no dudes en abrir un issue en el repositorio. 😊
 
 ---

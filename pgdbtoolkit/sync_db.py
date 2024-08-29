@@ -4,7 +4,7 @@ import psycopg
 import pandas as pd
 from contextlib import contextmanager
 from .log import log
-from .base import BaseDbTools
+from .base import BaseDbToolkit
 
 ##### Context Manager para Conexiones Sincrónicas #####
 
@@ -19,7 +19,7 @@ def db_connection(db_config):
 
 ##### Clase para Gestión de Operaciones Sincrónicas #####
 
-class PgDbTools(BaseDbTools):
+class PgDbToolkit(BaseDbToolkit):
     """Gestiona las operaciones sincrónicas de la base de datos."""
 
     ##### Método para Insertar Registros #####

@@ -1,6 +1,6 @@
 import os
 import pytest
-from pgdbtools import load_database_config
+from pgdbtoolkit import load_database_config
 
 def test_load_database_config_from_env():
     # Simular entorno
