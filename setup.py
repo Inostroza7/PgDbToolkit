@@ -8,7 +8,7 @@ setup(
     description="A package for managing PostgreSQL database operations",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/Inostroza7/pgdbtools",
+    url="https://github.com/Inostroza7/PgDbToolkit",
     packages=find_packages(),
     install_requires=[
         "pandas>=2.2.2",
