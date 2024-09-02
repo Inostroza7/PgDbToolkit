@@ -9,11 +9,14 @@
 
 ## Características ✨
 
-- **Soporte Sincrónico y Asíncrono**: Gestione operaciones de base de datos tanto en modo sincrónico como asíncrono.
-- **Manejo Eficiente de Conexiones**: Utiliza context managers para manejar las conexiones a la base de datos de manera eficiente.
-- **Facilidad de Configuración**: Cargue configuraciones desde un archivo `.env` o proporcione un diccionario personalizado directamente en el código.
-- **Logging Personalizado**: Integra un sistema de logging configurable para monitorear y depurar operaciones de base de datos.
-- **Operaciones CRUD**: Facilita la inserción, actualización, eliminación y consulta de registros.
+- **Soporte Sincrónico y Asíncrono:** Gestiona operaciones de base de datos tanto en modo sincrónico como asíncrono.
+- **Manejo Eficiente de Conexiones:** Utiliza context managers para manejar las conexiones a la base de datos de manera eficiente.
+- **Facilidad de Configuración:** Carga configuraciones desde un archivo `.env` o proporciona un diccionario personalizado directamente en el código.
+- **Logging Personalizado:** Integra un sistema de logging configurable para monitorear y depurar operaciones de base de datos.
+- **Operaciones CRUD:** Facilita la inserción, actualización, eliminación y consulta de registros.
+- **Gestión de Bases de Datos:** Permite crear, eliminar y listar bases de datos.
+- **Gestión de Tablas:** Facilita la creación, eliminación, modificación y consulta de tablas.
+- **Construcción de Queries:** Ofrece un método auxiliar para construir queries SQL personalizados.
 
 ## Instalación 🚀
 
@@ -70,18 +73,31 @@ from pgdbtoolkit import PgDbToolkit
 # Inicializa la herramienta con la configuración predeterminada o personalizada
 db_tool = PgDbToolkit()
 
+# Crea una nueva base de datos
+db_tool.create_database('nueva_base_de_datos')
+
+# Elimina una base de datos
+db_tool.delete_database('nueva_base_de_datos')
+
+# Crea una nueva tabla
+db_tool.create_table('mi_tabla', {
+    'id': 'SERIAL PRIMARY KEY',
+    'nombre': 'VARCHAR(100)',
+    'edad': 'INTEGER'
+})
+
 # Inserta un registro
-db_tool.insert_record("mi_tabla", {"columna1": "valor1", "columna2": "valor2"})
+db_tool.insert_record('mi_tabla', {'nombre': 'John Doe', 'edad': 30})
 
 # Consulta registros
-records = db_tool.fetch_records("mi_tabla", {"columna1": "valor1"})
+records = db_tool.fetch_records('mi_tabla', {'edad': 30})
 print(records)
 
 # Actualiza un registro
-db_tool.update_record("mi_tabla", {"columna2": "nuevo_valor"}, {"columna1": "valor1"})
+db_tool.update_record('mi_tabla', {'edad': 31}, {'nombre': 'John Doe'})
 
 # Elimina un registro
-db_tool.delete_record("mi_tabla", {"columna1": "valor1"})
+db_tool.delete_record('mi_tabla', {'nombre': 'John Doe'})
 ```
 
 ### 3. Ejemplo de Uso Asíncrono ⚡
@@ -94,18 +110,31 @@ async def main():
     # Inicializa la herramienta asíncrona con la configuración predeterminada o personalizada
     db_tool = AsyncPgDbToolkit()
 
+    # Crea una nueva base de datos
+    await db_tool.create_database('nueva_base_de_datos')
+
+    # Elimina una base de datos
+    await db_tool.delete_database('nueva_base_de_datos')
+
+    # Crea una nueva tabla
+    await db_tool.create_table('mi_tabla', {
+        'id': 'SERIAL PRIMARY KEY',
+        'nombre': 'VARCHAR(100)',
+        'edad': 'INTEGER'
+    })
+
     # Inserta un registro
-    await db_tool.insert_record("mi_tabla", {"columna1": "valor1", "columna2": "valor2"})
+    await db_tool.insert_record('mi_tabla', {'nombre': 'John Doe', 'edad': 30})
 
     # Consulta registros
-    records = await db_tool.fetch_records("mi_tabla", {"columna1": "valor1"})
+    records = await db_tool.fetch_records('mi_tabla', {'edad': 30})
     print(records)
 
     # Actualiza un registro
-    await db_tool.update_record("mi_tabla", {"columna2": "nuevo_valor"}, {"columna1": "valor1"})
+    await db_tool.update_record('mi_tabla', {'edad': 31}, {'nombre': 'John Doe'})
 
     # Elimina un registro
-    await db_tool.delete_record("mi_tabla", {"columna1": "valor1"})
+    await db_tool.delete_record('mi_tabla', {'nombre': 'John Doe'})
 
 # Ejecuta la función principal
 asyncio.run(main())
@@ -149,5 +178,3 @@ Este proyecto está licenciado bajo la Licencia MIT - ver el archivo [LICENSE](L
 ---
 
 ¡Gracias por usar `PgDbToolkit`! Si tienes alguna pregunta o sugerencia, no dudes en abrir un issue en el repositorio. 😊
-
----
