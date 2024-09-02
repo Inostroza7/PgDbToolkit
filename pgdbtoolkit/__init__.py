@@ -1,13 +1,13 @@
 from .sync_db import PgDbToolkit
 from .async_db import AsyncPgDbToolkit
-from .log import log
+from .log import Log
 from .config import load_database_config
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     'PgDbToolkit',
     'AsyncPgDbToolkit',
-    'log',
+    'Log',
     'load_database_config',
 ]

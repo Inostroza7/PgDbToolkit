@@ -163,3 +163,4 @@ cython_debug/
 
 update.md
 update.py
+.DS_Store
