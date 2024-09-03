@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.3] - 2024-09-02
+
+### Added
+- **Fix `log`:** Fix de logs con la librería httpx.
+
 ## [0.1.2] - 2024-09-02
 
 ### Added
