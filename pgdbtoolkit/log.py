@@ -36,6 +36,13 @@ class Log:
             file_handler.setFormatter(formatter)
             self.logger.addHandler(file_handler)
 
+        # Configurar el nivel de logging específico para `httpx`
+        httpx_logger = logging.getLogger('httpx')
+        httpx_logger.setLevel(logging.WARNING)
+        httpx_logger.addHandler(console_handler)
+        if log_to_file:
+            httpx_logger.addHandler(file_handler)
+
     def __getattr__(self, name):
         """Permite que las llamadas al logger se realicen directamente desde la instancia de Log."""
         return getattr(self.logger, name)
