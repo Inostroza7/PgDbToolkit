@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5] - 2024-09-24
+
+### Added
+- **Fix `sync_db`:** Fix del sync_db
+
 ## [0.1.4] - 2024-09-24
 
 ### Added

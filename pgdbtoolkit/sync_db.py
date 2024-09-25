@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import os
 from .log import log
 from .base import BaseDbToolkit
+import json
 
 ##### Context Manager para Conexiones Sincrónicas #####
 
@@ -390,12 +391,17 @@ class PgDbToolkit(BaseDbToolkit):
         Raises:
             psycopg.Error: Si ocurre un error durante la inserción.
         """
-        query = self.build_query(table_name, record, query_type="INSERT")
+        sanitized_record = {k: self.sanitize_value(v) for k, v in record.items()}
+        columns = ', '.join([self.sanitize_identifier(k) for k in sanitized_record.keys()])
+        placeholders = ', '.join(['%s'] * len(sanitized_record))
+        query = f"INSERT INTO {self.sanitize_identifier(table_name)} ({columns}) VALUES ({placeholders})"
+        
         try:
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(query, tuple(record.values()))
+                    cur.execute(query, tuple(sanitized_record.values()))
                     conn.commit()
+            log.info(f"Record inserted successfully into {table_name}")
         except psycopg.Error as e:
             log.error(f"Error inserting record into {table_name}: {e}")
             raise
@@ -557,3 +563,20 @@ class PgDbToolkit(BaseDbToolkit):
             str: El identificador sanitizado.
         """
         return '"{}"'.format(identifier.replace('"', '""'))
+
+    def sanitize_value(self, value):
+        """
+        Sanitiza un valor para su inserción segura en la base de datos.
+
+        Args:
+            value: El valor a sanitizar.
+
+        Returns:
+            El valor sanitizado, listo para ser insertado en la base de datos.
+        """
+        if isinstance(value, (list, dict)):
+            return json.dumps(value)
+        elif isinstance(value, (int, float, str, bool, type(None))):
+            return value
+        else:
+            return str(value)
