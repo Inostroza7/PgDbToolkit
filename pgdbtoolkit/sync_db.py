@@ -11,7 +11,15 @@ from .base import BaseDbToolkit
 
 @contextmanager
 def db_connection(db_config):
-    """Context manager para manejar conexiones sincrónicas a la base de datos."""
+    """
+    Context manager para manejar conexiones sincrónicas a la base de datos.
+    
+    Args:
+        db_config (dict): Configuración de la base de datos.
+
+    Yields:
+        psycopg.Connection: Una conexión a la base de datos.
+    """
     conn = psycopg.connect(**db_config)
     try:
         yield conn
@@ -21,27 +29,22 @@ def db_connection(db_config):
 ##### Clase para Gestión de Operaciones Sincrónicas #####
 
 class PgDbToolkit(BaseDbToolkit):
-    """Gestiona las operaciones sincrónicas de la base de datos."""
+    """
+    Gestiona las operaciones sincrónicas de la base de datos PostgreSQL.
+    Proporciona métodos para crear, eliminar y modificar bases de datos, tablas y registros.
+    """
 
     ###### Métodos de Base de Datos ######
 
     def create_database(self, database_name: str) -> None:
-        """Crea una nueva base de datos en el servidor PostgreSQL y actualiza la configuración.
-
-        Este método ejecuta una consulta SQL para crear una nueva base de datos
-        con el nombre especificado. Si la base de datos ya existe, se registra
-        una advertencia en el log y no se realiza ninguna acción adicional. En
-        caso de que ocurra un error diferente, se captura y se registra en el log,
-        elevando una excepción para su manejo. Luego de crear la base de datos,
-        se actualiza la variable `DB_DATABASE` en la configuración para que apunte
-        a la nueva base de datos.
+        """
+        Crea una nueva base de datos en el servidor PostgreSQL y actualiza la configuración.
 
         Args:
             database_name (str): Nombre de la base de datos que se desea crear.
 
         Raises:
-            psycopg.Error: Si ocurre un error durante la creación de la base de datos
-            que no sea una duplicación de base de datos existente.
+            psycopg.Error: Si ocurre un error durante la creación de la base de datos.
 
         Example:
             >>> toolkit.create_database('mi_nueva_base_de_datos')
@@ -66,7 +69,8 @@ class PgDbToolkit(BaseDbToolkit):
             raise
         
     def delete_database(self, database_name: str) -> None:
-        """Elimina una base de datos en el servidor PostgreSQL.
+        """
+        Elimina una base de datos existente en el servidor PostgreSQL.
 
         Args:
             database_name (str): Nombre de la base de datos que se desea eliminar.
@@ -101,7 +105,8 @@ class PgDbToolkit(BaseDbToolkit):
             raise
 
     def get_databases(self) -> pd.DataFrame:
-        """Obtiene una lista de todas las bases de datos en el servidor PostgreSQL.
+        """
+        Obtiene una lista de todas las bases de datos en el servidor PostgreSQL.
 
         Returns:
             pd.DataFrame: DataFrame con los nombres de las bases de datos.
@@ -124,17 +129,12 @@ class PgDbToolkit(BaseDbToolkit):
     ###### Métodos de Tablas ######
 
     def create_table(self, table_name: str, schema: dict) -> None:
-        """Crea una nueva tabla en la base de datos con el esquema especificado, incluyendo llaves foráneas.
-
-        Este método toma un nombre de tabla y un esquema en forma de diccionario
-        donde las claves son los nombres de las columnas y los valores son sus
-        definiciones SQL o tuplas que especifican el tipo de dato y las llaves foráneas.
-        Construye la consulta SQL correspondiente y la ejecuta para crear la tabla.
+        """
+        Crea una nueva tabla en la base de datos con el esquema especificado.
 
         Args:
             table_name (str): Nombre de la tabla que se desea crear.
-            schema (dict): Diccionario que define las columnas de la tabla y sus tipos de datos. 
-                        Para llaves foráneas, utilizar una tupla: ("tipo_dato", "REFERENCES tabla_externa(columna_externa)").
+            schema (dict): Diccionario que define las columnas de la tabla y sus tipos de datos.
 
         Raises:
             psycopg.Error: Si ocurre un error durante la creación de la tabla.
@@ -142,8 +142,7 @@ class PgDbToolkit(BaseDbToolkit):
         Example:
             >>> pg.create_table('orders', 
                                 {"id": "SERIAL PRIMARY KEY", 
-                                "user_id": ("INTEGER", "REFERENCES users(id)")}
-                            )
+                                 "user_id": ("INTEGER", "REFERENCES users(id)")})
         """
         # Convertir el diccionario schema en una cadena SQL
         schema_str = ', '.join([f"{col} {dtype}" if isinstance(dtype, str) else f"{col} {dtype[0]} {dtype[1]}"
@@ -161,7 +160,8 @@ class PgDbToolkit(BaseDbToolkit):
             raise
 
     def delete_table(self, table_name: str) -> None:
-        """Elimina una tabla de la base de datos.
+        """
+        Elimina una tabla de la base de datos.
 
         Este método ejecuta una consulta SQL para eliminar una tabla existente con el
         nombre especificado. Si la tabla no existe, la consulta no genera errores gracias
@@ -201,7 +201,8 @@ class PgDbToolkit(BaseDbToolkit):
                     drop_column_default: str = None,
                     set_column_not_null: str = None,
                     drop_column_not_null: str = None) -> None:
-        """Realiza múltiples tipos de alteraciones en una tabla existente en la base de datos.
+        """
+        Realiza múltiples tipos de alteraciones en una tabla existente en la base de datos.
 
         Dependiendo de los parámetros proporcionados, este método puede agregar o eliminar columnas,
         renombrar columnas o tablas, cambiar tipos de datos, agregar o eliminar restricciones,
@@ -277,7 +278,8 @@ class PgDbToolkit(BaseDbToolkit):
             raise
 
     def get_tables(self) -> list:
-        """Obtiene una lista con los nombres de todas las tablas en la base de datos.
+        """
+        Obtiene una lista con los nombres de todas las tablas en la base de datos.
 
         Esta función consulta las tablas en la base de datos actual y devuelve sus nombres
         en forma de lista.
@@ -311,7 +313,8 @@ class PgDbToolkit(BaseDbToolkit):
 
 
     def get_table_info(self, table_name: str) -> pd.DataFrame:
-        """Obtiene la información de las columnas de una tabla, incluyendo nombre, tipo de datos y restricciones.
+        """
+        Obtiene la información de las columnas de una tabla, incluyendo nombre, tipo de datos y restricciones.
 
         Este método consulta las tablas del sistema en PostgreSQL para recuperar la información
         sobre las columnas de una tabla específica, incluyendo el nombre de la columna, el tipo de datos,
@@ -355,7 +358,8 @@ class PgDbToolkit(BaseDbToolkit):
 
 
     def truncate_table(self, table_name: str) -> None:
-        """Elimina todos los registros de una tabla sin eliminar la tabla.
+        """
+        Elimina todos los registros de una tabla sin eliminar la tabla.
 
         Args:
             table_name (str): Nombre de la tabla que será truncada.
@@ -376,7 +380,8 @@ class PgDbToolkit(BaseDbToolkit):
     ###### Métodos de Registros ######
 
     def insert_record(self, table_name: str, record: dict) -> None:
-        """Inserta un registro en la tabla especificada de manera sincrónica.
+        """
+        Inserta un registro en la tabla especificada de manera sincrónica.
 
         Args:
             table_name (str): Nombre de la tabla en la que se insertará el registro.
@@ -396,7 +401,8 @@ class PgDbToolkit(BaseDbToolkit):
             raise
 
     def fetch_records(self, table_name: str, conditions: dict = None) -> pd.DataFrame:
-        """Consulta registros de una tabla con condiciones opcionales de manera sincrónica.
+        """
+        Consulta registros de una tabla con condiciones opcionales.
 
         Args:
             table_name (str): Nombre de la tabla de la cual se consultarán los registros.
@@ -408,20 +414,21 @@ class PgDbToolkit(BaseDbToolkit):
         Raises:
             psycopg.Error: Si ocurre un error durante la consulta.
         """
-        query = self.build_query(table_name, conditions, query_type="SELECT")
+        query, params = self.build_query(table_name, conditions=conditions, query_type="SELECT")
         try:
             with db_connection(self.db_config) as conn:
                 with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
-                    cur.execute(query, tuple(conditions.values()) if conditions else ())
+                    cur.execute(query, params)
                     records = cur.fetchall()
-
             return pd.DataFrame(records)
         except psycopg.Error as e:
-            log.error(f"Error fetching records from {table_name}: {e.pgerror}")
+            log.error(f"Error fetching records from {table_name}: {str(e)}")
             raise
+        
 
     def update_record(self, table_name: str, record: dict, conditions: dict) -> None:
-        """Actualiza un registro en la tabla especificada basado en las condiciones.
+        """
+        Actualiza un registro en la tabla especificada basado en las condiciones.
 
         Args:
             table_name (str): Nombre de la tabla en la que se actualizará el registro.
@@ -442,7 +449,8 @@ class PgDbToolkit(BaseDbToolkit):
             raise
 
     def delete_record(self, table_name: str, conditions: dict) -> None:
-        """Elimina un registro de la tabla especificada basado en las condiciones.
+        """
+        Elimina un registro de la tabla especificada basado en las condiciones.
 
         Args:
             table_name (str): Nombre de la tabla de la cual se eliminará el registro.
@@ -462,7 +470,8 @@ class PgDbToolkit(BaseDbToolkit):
             raise
 
     def execute_query(self, query: str, params: tuple = None) -> pd.DataFrame:
-        """Ejecuta un query SQL personalizado de manera sincrónica.
+        """
+        Ejecuta un query SQL personalizado de manera sincrónica.
 
         Args:
             query (str): El query SQL a ejecutar.
@@ -487,43 +496,64 @@ class PgDbToolkit(BaseDbToolkit):
 
     ##### Método Auxiliar para Construcción de Queries #####
 
-    def build_query(self, table_name: str, data: dict = None, conditions: dict = None, query_type: str = "INSERT") -> str:
-        """Construye un query SQL basado en el tipo de operación.
+    def build_query(self, table_name: str, data: dict = None, conditions: dict = None, query_type: str = "SELECT") -> tuple:
+        """
+        Construye un query SQL basado en el tipo de operación.
 
         Args:
             table_name (str): Nombre de la tabla.
-            data (dict): Diccionario con los datos del registro.
+            data (dict, opcional): Diccionario con los datos del registro para INSERT y UPDATE.
             conditions (dict, opcional): Diccionario de condiciones para filtrar los registros.
-            query_type (str, opcional): Tipo de query a construir ('INSERT', 'UPDATE', 'DELETE').
+            query_type (str, opcional): Tipo de query a construir ('SELECT', 'INSERT', 'UPDATE', 'DELETE').
 
         Returns:
-            str: Query SQL construido.
-
-        Raises:
-            ValueError: Si el tipo de query no es reconocido.
+            tuple: (query_string, params)
         """
-        if query_type == "INSERT":
-            columns = ', '.join([f'"{col}"' for col in data.keys()])
-            values = ', '.join(['%s'] * len(data))
-            return f"INSERT INTO {table_name} ({columns}) VALUES ({values})"
-        
-        elif query_type == "UPDATE":
-            set_str = ', '.join([f'"{k}" = %s' for k in data.keys()])
-            condition_str = ' AND '.join([f'"{k}" = %s' for k in conditions.keys()]) if conditions else ""
-            return f"UPDATE {table_name} SET {set_str}" + (f" WHERE {condition_str}" if condition_str else "")
-        
-        elif query_type == "DELETE":
-            if not conditions or len(conditions) == 0:
-                raise ValueError("DELETE queries require at least one condition.")
-            condition_str = ' AND '.join([f'"{k}" = %s' for k in conditions.keys()])
-            return f"DELETE FROM {table_name} WHERE {condition_str}"
-        
-        elif query_type == "SELECT":
-            query = f"SELECT * FROM {table_name}"
+        table_name = self.sanitize_identifier(table_name)
+        params = []
+
+        if query_type == "SELECT":
+            query = "SELECT * FROM {}".format(table_name)
             if conditions:
-                condition_str = ' AND '.join([f'"{k}" = %s' for k in conditions.keys()])
-                query += f" WHERE {condition_str}"
-            return query
-        
+                condition_str = ' AND '.join(["{}= %s".format(self.sanitize_identifier(k)) for k in conditions.keys()])
+                query += " WHERE {}".format(condition_str)
+                params.extend(conditions.values())
+        elif query_type == "INSERT":
+            if not data:
+                raise ValueError("INSERT queries require data.")
+            columns = ', '.join([self.sanitize_identifier(col) for col in data.keys()])
+            placeholders = ', '.join(['%s'] * len(data))
+            query = "INSERT INTO {} ({}) VALUES ({})".format(table_name, columns, placeholders)
+            params.extend(data.values())
+        elif query_type == "UPDATE":
+            if not data:
+                raise ValueError("UPDATE queries require data.")
+            set_str = ', '.join(["{}= %s".format(self.sanitize_identifier(k)) for k in data.keys()])
+            query = "UPDATE {} SET {}".format(table_name, set_str)
+            params.extend(data.values())
+            if conditions:
+                condition_str = ' AND '.join(["{}= %s".format(self.sanitize_identifier(k)) for k in conditions.keys()])
+                query += " WHERE {}".format(condition_str)
+                params.extend(conditions.values())
+        elif query_type == "DELETE":
+            if not conditions:
+                raise ValueError("DELETE queries require at least one condition.")
+            condition_str = ' AND '.join(["{}= %s".format(self.sanitize_identifier(k)) for k in conditions.keys()])
+            query = "DELETE FROM {} WHERE {}".format(table_name, condition_str)
+            params.extend(conditions.values())
         else:
-            raise ValueError(f"Tipo de query {query_type} no reconocido.")
+            raise ValueError("Query type '{}' not recognized.".format(query_type))
+
+        return query, params
+
+    def sanitize_identifier(self, identifier: str) -> str:
+        """
+        Sanitiza un identificador SQL para prevenir inyección SQL.
+
+        Args:
+            identifier (str): El identificador a sanitizar.
+
+        Returns:
+            str: El identificador sanitizado.
+        """
+        return '"{}"'.format(identifier.replace('"', '""'))

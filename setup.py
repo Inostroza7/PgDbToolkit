@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="PgDbToolkit",
-    version="0.1.3",
+    version="0.1.4",
     author="Gustavo Inostroza",
     author_email="gusinostrozar@gmail.com",
     description="A package for managing PostgreSQL database operations",
