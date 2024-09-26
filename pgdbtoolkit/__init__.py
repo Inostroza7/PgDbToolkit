@@ -3,7 +3,7 @@ from .async_db import AsyncPgDbToolkit
 from .log import Log
 from .config import load_database_config
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 __all__ = [
     'PgDbToolkit',

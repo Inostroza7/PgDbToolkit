@@ -380,30 +380,55 @@ class PgDbToolkit(BaseDbToolkit):
 
     ###### Métodos de Registros ######
 
-    def insert_record(self, table_name: str, record: dict) -> None:
+    def insert_record(self, table_name: str, record) -> None:
         """
-        Inserta un registro en la tabla especificada de manera sincrónica.
+        Inserta uno o más registros en la tabla especificada de manera sincrónica.
+        Soporta la inserción desde un diccionario, un archivo CSV o un DataFrame de Pandas.
 
         Args:
             table_name (str): Nombre de la tabla en la que se insertará el registro.
-            record (dict): Diccionario con los datos del registro a insertar.
+            record (dict, str o pd.DataFrame): Diccionario, archivo CSV o DataFrame de Pandas que contiene los datos.
 
         Raises:
             psycopg.Error: Si ocurre un error durante la inserción.
         """
-        sanitized_record = {k: self.sanitize_value(v) for k, v in record.items()}
-        columns = ', '.join([self.sanitize_identifier(k) for k in sanitized_record.keys()])
-        placeholders = ', '.join(['%s'] * len(sanitized_record))
-        query = f"INSERT INTO {self.sanitize_identifier(table_name)} ({columns}) VALUES ({placeholders})"
+        # Si el record es un archivo CSV
+        if isinstance(record, str) and record.endswith('.csv') and os.path.isfile(record):
+            # Cargar el archivo CSV en un DataFrame
+            record = pd.read_csv(record)
+
+        # Si el record es un DataFrame de Pandas
+        if isinstance(record, pd.DataFrame):
+            # Convertir el DataFrame a una lista de diccionarios
+            records = record.to_dict(orient='records')
+        # Si el record es un diccionario, lo convertimos en una lista con un solo elemento
+        elif isinstance(record, dict):
+            records = [record]
+        else:
+            raise ValueError("El argumento 'record' debe ser un diccionario, un archivo CSV o un DataFrame de Pandas.")
+
+        # Obtener columnas de los registros
+        if not records:
+            raise ValueError("No records to insert.")
+        columns = records[0].keys()
+        columns_str = ', '.join([self.sanitize_identifier(col) for col in columns])
+        placeholders = ', '.join(['%s'] * len(columns))
+
+        # Crear la consulta SQL para la inserción
+        query = f"INSERT INTO {self.sanitize_identifier(table_name)} ({columns_str}) VALUES ({placeholders})"
         
+        # Preparar los valores de los registros
+        values = [tuple(rec[col] for col in columns) for rec in records]
+
         try:
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(query, tuple(sanitized_record.values()))
+                    # Insertar múltiples registros de una vez
+                    cur.executemany(query, values)
                     conn.commit()
-            log.info(f"Record inserted successfully into {table_name}")
+                log.info(f"{len(records)} records inserted successfully into {table_name}.")
         except psycopg.Error as e:
-            log.error(f"Error inserting record into {table_name}: {e}")
+            log.error(f"Error inserting records into {table_name}: {e}")
             raise
 
     def fetch_records(self, table_name: str, conditions: dict = None) -> pd.DataFrame:
