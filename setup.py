@@ -1,8 +1,13 @@
 from setuptools import setup, find_packages
+from pgdbtoolkit.__version__ import __version__
+from pathlib import Path
+
+with Path("requirements.txt").open() as f:
+    install_requires = f.read().splitlines()
 
 setup(
     name="PgDbToolkit",
-    version="0.1.6",
+    version=__version__,
     author="Gustavo Inostroza",
     author_email="gusinostrozar@gmail.com",
     description="A package for managing PostgreSQL database operations",
@@ -10,11 +15,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/Inostroza7/PgDbToolkit",
     packages=find_packages(),
-    install_requires=[
-        "pandas>=2.2.2",
-        "psycopg[binary]>=3.2.1",
-        "python-dotenv>=1.0.1"
-    ],
+    install_requires=install_requires,
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

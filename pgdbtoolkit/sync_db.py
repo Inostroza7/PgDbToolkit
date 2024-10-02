@@ -1,12 +1,14 @@
 ##### Clase Sincrónica para Operaciones en la Base de Datos #####
 
 import psycopg
+from pgvector.psycopg import register_vector
 import pandas as pd
 from contextlib import contextmanager
 import os
 from .log import log
 from .base import BaseDbToolkit
 import json
+import numpy as np
 
 ##### Context Manager para Conexiones Sincrónicas #####
 
@@ -23,6 +25,8 @@ def db_connection(db_config):
     """
     conn = psycopg.connect(**db_config)
     try:
+        register_vector(conn)
+
         yield conn
     finally:
         conn.close()
@@ -546,7 +550,7 @@ class PgDbToolkit(BaseDbToolkit):
         if query_type == "SELECT":
             query = "SELECT * FROM {}".format(table_name)
             if conditions:
-                condition_str = ' AND '.join(["{}= %s".format(self.sanitize_identifier(k)) for k in conditions.keys()])
+                condition_str = ' AND '.join(["{} = %s".format(self.sanitize_identifier(k)) for k in conditions.keys()])
                 query += " WHERE {}".format(condition_str)
                 params.extend(conditions.values())
         elif query_type == "INSERT":
@@ -605,3 +609,92 @@ class PgDbToolkit(BaseDbToolkit):
             return value
         else:
             return str(value)
+        
+    def create_vector_extension(self) -> None:
+        """
+        Habilita la extensión 'vector' en la base de datos actual.
+
+        Este método ejecuta 'CREATE EXTENSION vector;' para permitir el uso
+        de tipos y funciones de vectores proporcionados por la extensión pgvector.
+
+        Raises:
+            psycopg.Error: Si ocurre un error al habilitar la extensión.
+        """
+        query = "CREATE EXTENSION IF NOT EXISTS vector;"
+        try:
+            with db_connection(self.db_config) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(query)
+                    conn.commit()
+            log.info("Extensión 'vector' habilitada exitosamente en la base de datos.")
+        except psycopg.Error as e:
+            log.error(f"Error al habilitar la extensión 'vector': {e}")
+            raise
+
+    def search_vectors(self,
+                    vector: list,
+                    table_name: str = 'vectors',
+                    limit: int = 5,
+                    vector_column: str = 'embedding',
+                    agent_id: str = None,
+                    agent_column: str = 'agent_id',
+                    vector_status: int = None,
+                    vector_status_column: str = 'vector_status') -> pd.DataFrame:
+        """
+        Realiza una búsqueda de vectores en la base de datos utilizando similitud coseno.
+
+        Args:
+            vector (np.ndarray): El vector de consulta.
+            table_name (str, opcional): Nombre de la tabla donde se encuentran los vectores. Por defecto es 'vectors'.
+            limit (int, opcional): Número máximo de resultados a retornar. Por defecto es 5.
+            vector_column (str, opcional): Nombre de la columna que almacena los vectores. Por defecto es 'embedding'.
+            agent_id (str, opcional): ID del agente cuyos vectores serán buscados.
+            agent_column (str, opcional): Nombre de la columna que almacena el ID del agente. Por defecto es 'agent_id'.
+            vector_status (int, opcional): Estado del vector para filtrar los resultados.
+            vector_status_column (str, opcional): Nombre de la columna que almacena el estado del vector. Por defecto es 'vector_status'.
+
+        Returns:
+            pd.DataFrame: DataFrame con los registros más similares.
+
+        Raises:
+            psycopg.Error: Si ocurre un error durante la consulta.
+        """
+        vector = np.array(vector)
+        
+        # Construir la cláusula WHERE dinámica
+        where_conditions = []
+        params = []
+
+        if agent_id is not None:
+            where_conditions.append(f"{self.sanitize_identifier(agent_column)} = %s")
+            params.append(agent_id)
+
+        if vector_status is not None:
+            where_conditions.append(f"{self.sanitize_identifier(vector_status_column)} = %s")
+            params.append(vector_status)
+
+        # Unir las condiciones con 'AND' si hay más de una
+        where_clause = ''
+        if where_conditions:
+            where_clause = 'WHERE ' + ' AND '.join(where_conditions)
+
+        # Construir la consulta SQL
+        query = f"""
+        SELECT *, 1 - ({self.sanitize_identifier(vector_column)} <=> %s) AS cosine_similarity
+        FROM {self.sanitize_identifier(table_name)}
+        {where_clause}
+        ORDER BY {self.sanitize_identifier(vector_column)} <=> %s
+        LIMIT %s;
+        """
+        # Agregar el vector y el límite a los parámetros
+        params = [vector] + params + [vector, limit]
+
+        try:
+            with db_connection(self.db_config) as conn:
+                with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+                    cur.execute(query, params)
+                    records = cur.fetchall()
+            return pd.DataFrame(records)
+        except psycopg.Error as e:
+            log.error(f"Error during vector search: {e}")
+            raise
