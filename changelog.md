@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.8] - 2024-10-02
+
+### Added
+- **Fix `sync_db`:** Fix update_vectors
+
 ## [0.1.7] - 2024-10-02
 
 ### Added

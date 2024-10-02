@@ -39,6 +39,36 @@ class PgDbToolkit(BaseDbToolkit):
     Proporciona métodos para crear, eliminar y modificar bases de datos, tablas y registros.
     """
 
+
+    @staticmethod
+    def validate_hashable(data: dict) -> None:
+        """
+        Valida que todos los valores en un diccionario sean hashables.
+
+        Args:
+            data (dict): Diccionario a validar.
+
+        Raises:
+            ValueError: Si se encuentra un tipo no hashable.
+        """
+        for key, value in data.items():
+            if isinstance(value, (list, dict)):
+                raise ValueError(f"Tipo no hashable {type(value)} encontrado para la clave '{key}'. Por favor, conviértalo a un tipo hashable.")
+
+    @staticmethod
+    def sanitize_conditions(conditions: dict) -> dict:
+        """
+        Convierte automáticamente los integers a strings en las condiciones.
+
+        Args:
+            conditions (dict): Diccionario de condiciones.
+
+        Returns:
+            dict: Diccionario de condiciones con integers convertidos a strings.
+        """
+        return {k: str(v) if isinstance(v, int) else v for k, v in conditions.items()}
+
+
     ###### Métodos de Base de Datos ######
 
     def create_database(self, database_name: str) -> None:
@@ -461,7 +491,11 @@ class PgDbToolkit(BaseDbToolkit):
             raise
         
 
-    def update_record(self, table_name: str, record: dict, conditions: dict) -> None:
+    def update_record(self, 
+                      table_name: str, 
+                      record: dict, 
+                      conditions: dict,
+                      ) -> None:
         """
         Actualiza un registro en la tabla especificada basado en las condiciones.
 
@@ -471,17 +505,31 @@ class PgDbToolkit(BaseDbToolkit):
             conditions (dict): Diccionario de condiciones para identificar el registro a actualizar.
 
         Raises:
-            psycopg.Error: Si ocurre un error durante la actualización.
+            ValueError: Si se encuentran tipos de datos inválidos en record o conditions.
+            psycopg.Error: Si ocurre un error durante la actualización en la base de datos.
         """
-        query = self.build_query(table_name, record, conditions, query_type="UPDATE")
         try:
+            self.validate_hashable(record)
+            self.validate_hashable(conditions)
+            conditions = self.sanitize_conditions(conditions)
+            
+            query, params = self.build_query(table_name, record, conditions, query_type="UPDATE")
+            
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(query, tuple(record.values()) + tuple(conditions.values()))
+                    cur.execute(query, params)
                     conn.commit()
-        except psycopg.Error as e:
-            log.error(f"Error updating record in {table_name}: {e}")
+            log.info(f"Registro actualizado exitosamente en la tabla {table_name}")
+        except ValueError as e:
+            log.error(f"Error de validación al actualizar registro en {table_name}: {e}")
             raise
+        except psycopg.Error as e:
+            log.error(f"Error de base de datos al actualizar registro en {table_name}: {e}")
+            raise
+        except Exception as e:
+            log.error(f"Error inesperado al actualizar registro en {table_name}: {e}")
+            raise
+
 
     def delete_record(self, table_name: str, conditions: dict) -> None:
         """
@@ -578,6 +626,9 @@ class PgDbToolkit(BaseDbToolkit):
             params.extend(conditions.values())
         else:
             raise ValueError("Query type '{}' not recognized.".format(query_type))
+
+        log.debug(f"Query construido: {query}")
+        log.debug(f"Parámetros: {params}")
 
         return query, params
 
