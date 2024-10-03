@@ -1,10 +1,15 @@
 # Changelog
 
+## [0.1.10] - 2024-10-03
+
+### Added
+- **Added `sync_db`:** Ahora permite agregar order_direction 'ASC' y 'DESC'
+
+
 ## [0.1.9] - 2024-10-03
 
 ### Added
 - **Added `sync_db`:** Ahora permite agregar order_by y limit 
-
 
 ## [0.1.8] - 2024-10-02
 

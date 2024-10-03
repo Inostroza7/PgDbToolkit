@@ -465,14 +465,20 @@ class PgDbToolkit(BaseDbToolkit):
             log.error(f"Error inserting records into {table_name}: {e}")
             raise
 
-    def fetch_records(self, table_name: str, conditions: dict = None, order_by: str = None, limit: int = None) -> pd.DataFrame:
+    def fetch_records(self, 
+                      table_name: str, 
+                      conditions: dict = None, 
+                      order_by: str = None, 
+                      order_direction: str = "DESC", 
+                      limit: int = None) -> pd.DataFrame:
         """
         Consulta registros de una tabla con condiciones opcionales, permite ordenar y limitar resultados.
 
         Args:
             table_name (str): Nombre de la tabla de la cual se consultarán los registros.
             conditions (dict, opcional): Diccionario de condiciones para filtrar los registros.
-            order_by (str, opcional): Columna para ordenar los resultados. Ejemplo: "created_at DESC".
+            order_by (str, opcional): Columna para ordenar los resultados. Ejemplo: "created_at".
+            order_direction (str, opcional): Dirección de orden ('ASC' o 'DESC'). Por defecto es 'DESC'.
             limit (int, opcional): Número máximo de registros a devolver.
 
         Returns:
@@ -483,9 +489,14 @@ class PgDbToolkit(BaseDbToolkit):
         """
         query, params = self.build_query(table_name, conditions=conditions, query_type="SELECT")
         
+        # Asegurarse de que la dirección sea válida (ASC o DESC)
+        order_direction = order_direction.upper()
+        if order_direction not in ["ASC", "DESC"]:
+            raise ValueError("order_direction debe ser 'ASC' o 'DESC'")
+        
         # Agregar la cláusula ORDER BY si se proporciona
         if order_by:
-            query += f" ORDER BY {self.sanitize_identifier(order_by)}"
+            query += f" ORDER BY {self.sanitize_identifier(order_by)} {order_direction}"
         
         # Agregar la cláusula LIMIT si se proporciona
         if limit:
@@ -500,7 +511,6 @@ class PgDbToolkit(BaseDbToolkit):
         except psycopg.Error as e:
             log.error(f"Error fetching records from {table_name}: {str(e)}")
             raise
-        
 
     def update_record(self, 
                       table_name: str, 
