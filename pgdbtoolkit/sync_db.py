@@ -465,13 +465,15 @@ class PgDbToolkit(BaseDbToolkit):
             log.error(f"Error inserting records into {table_name}: {e}")
             raise
 
-    def fetch_records(self, table_name: str, conditions: dict = None) -> pd.DataFrame:
+    def fetch_records(self, table_name: str, conditions: dict = None, order_by: str = None, limit: int = None) -> pd.DataFrame:
         """
-        Consulta registros de una tabla con condiciones opcionales.
+        Consulta registros de una tabla con condiciones opcionales, permite ordenar y limitar resultados.
 
         Args:
             table_name (str): Nombre de la tabla de la cual se consultarán los registros.
             conditions (dict, opcional): Diccionario de condiciones para filtrar los registros.
+            order_by (str, opcional): Columna para ordenar los resultados. Ejemplo: "created_at DESC".
+            limit (int, opcional): Número máximo de registros a devolver.
 
         Returns:
             pd.DataFrame: DataFrame con los registros consultados.
@@ -480,6 +482,15 @@ class PgDbToolkit(BaseDbToolkit):
             psycopg.Error: Si ocurre un error durante la consulta.
         """
         query, params = self.build_query(table_name, conditions=conditions, query_type="SELECT")
+        
+        # Agregar la cláusula ORDER BY si se proporciona
+        if order_by:
+            query += f" ORDER BY {self.sanitize_identifier(order_by)}"
+        
+        # Agregar la cláusula LIMIT si se proporciona
+        if limit:
+            query += f" LIMIT {limit}"
+        
         try:
             with db_connection(self.db_config) as conn:
                 with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
