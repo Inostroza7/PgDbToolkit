@@ -25,8 +25,10 @@ def db_connection(db_config):
     """
     conn = psycopg.connect(**db_config)
     try:
-        register_vector(conn)
-
+        try:
+            register_vector(conn)
+        except psycopg.ProgrammingError as e:
+            log.warning(f"Error al registrar el tipo vector: {e}. Continuando sin soporte de vectores.")
         yield conn
     finally:
         conn.close()
@@ -591,9 +593,13 @@ class PgDbToolkit(BaseDbToolkit):
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
                     cur.execute(query, params)
-                    records = cur.fetchall()
-                    columns = [desc[0] for desc in cur.description]
-            return pd.DataFrame(records, columns=columns)
+                    if cur.description:  # Solo intenta fetchall si hay resultados (e.g., una consulta SELECT)
+                        records = cur.fetchall()
+                        columns = [desc[0] for desc in cur.description]
+                        return pd.DataFrame(records, columns=columns)
+                    else:
+                        conn.commit()  # Para operaciones de modificación (INSERT, UPDATE, DELETE)
+                        return pd.DataFrame()  # Retornar un DataFrame vacío para mantener compatibilidad
         except psycopg.Error as e:
             log.error(f"Error executing query: {e}")
             raise

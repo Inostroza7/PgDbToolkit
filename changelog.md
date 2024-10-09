@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.11] - 2024-10-03
+
+### Added
+- **Fix `sync_db`:** Fix conexión que permitia solamente manejo de vectores ahora se pueden hacer query sin registro de vectores
+
 ## [0.1.10] - 2024-10-03
 
 ### Added
