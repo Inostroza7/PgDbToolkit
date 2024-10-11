@@ -469,19 +469,22 @@ class PgDbToolkit(BaseDbToolkit):
 
     def fetch_records(self, 
                       table_name: str, 
+                      columns: list = None,
                       conditions: dict = None, 
-                      order_by: str = None, 
-                      order_direction: str = "DESC", 
-                      limit: int = None) -> pd.DataFrame:
+                      order_by: list = None, 
+                      limit: int = None,
+                      offset: int = None) -> pd.DataFrame:
         """
-        Consulta registros de una tabla con condiciones opcionales, permite ordenar y limitar resultados.
+        Consulta registros de una tabla con condiciones avanzadas, permite seleccionar columnas específicas,
+        ordenar por múltiples columnas, limitar resultados y aplicar un offset.
 
         Args:
             table_name (str): Nombre de la tabla de la cual se consultarán los registros.
+            columns (list, opcional): Lista de columnas a seleccionar. Por defecto selecciona todas (*).
             conditions (dict, opcional): Diccionario de condiciones para filtrar los registros.
-            order_by (str, opcional): Columna para ordenar los resultados. Ejemplo: "created_at".
-            order_direction (str, opcional): Dirección de orden ('ASC' o 'DESC'). Por defecto es 'DESC'.
+            order_by (list, opcional): Lista de tuplas (columna, dirección) para ordenar los resultados.
             limit (int, opcional): Número máximo de registros a devolver.
+            offset (int, opcional): Número de registros a saltar antes de comenzar a devolver resultados.
 
         Returns:
             pd.DataFrame: DataFrame con los registros consultados.
@@ -489,30 +492,12 @@ class PgDbToolkit(BaseDbToolkit):
         Raises:
             psycopg.Error: Si ocurre un error durante la consulta.
         """
-        query, params = self.build_query(table_name, conditions=conditions, query_type="SELECT")
-        
-        # Asegurarse de que la dirección sea válida (ASC o DESC)
-        order_direction = order_direction.upper()
-        if order_direction not in ["ASC", "DESC"]:
-            raise ValueError("order_direction debe ser 'ASC' o 'DESC'")
-        
-        # Agregar la cláusula ORDER BY si se proporciona
-        if order_by:
-            query += f" ORDER BY {self.sanitize_identifier(order_by)} {order_direction}"
-        
-        # Agregar la cláusula LIMIT si se proporciona
-        if limit:
-            query += f" LIMIT {limit}"
-        
-        try:
-            with db_connection(self.db_config) as conn:
-                with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
-                    cur.execute(query, params)
-                    records = cur.fetchall()
-            return pd.DataFrame(records)
-        except psycopg.Error as e:
-            log.error(f"Error fetching records from {table_name}: {str(e)}")
-            raise
+        query, params = self.build_query(
+            table_name, columns, conditions=conditions, 
+            order_by=order_by, limit=limit, offset=offset, 
+            query_type="SELECT"
+        )
+        return self.execute_query(query, params)
 
     def update_record(self, 
                       table_name: str, 
@@ -593,12 +578,12 @@ class PgDbToolkit(BaseDbToolkit):
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
                     cur.execute(query, params)
-                    if cur.description:  # Solo intenta fetchall si hay resultados (e.g., una consulta SELECT)
+                    if cur.description:  # Solo intenta fetchall si hay resultados
                         records = cur.fetchall()
                         columns = [desc[0] for desc in cur.description]
                         return pd.DataFrame(records, columns=columns)
                     else:
-                        conn.commit()  # Para operaciones de modificación (INSERT, UPDATE, DELETE)
+                        conn.commit()  # Para operaciones de modificación
                         return pd.DataFrame()  # Retornar un DataFrame vacío para mantener compatibilidad
         except psycopg.Error as e:
             log.error(f"Error executing query: {e}")
@@ -606,14 +591,26 @@ class PgDbToolkit(BaseDbToolkit):
 
     ##### Método Auxiliar para Construcción de Queries #####
 
-    def build_query(self, table_name: str, data: dict = None, conditions: dict = None, query_type: str = "SELECT") -> tuple:
+    def build_query(self, 
+                    table_name: str, 
+                    columns: list = None, 
+                    data: dict = None, 
+                    conditions: dict = None, 
+                    order_by: list = None, 
+                    limit: int = None, 
+                    offset: int = None, 
+                    query_type: str = "SELECT") -> tuple:
+ 
         """
-        Construye un query SQL basado en el tipo de operación.
+        Construye un query SQL avanzado basado en el tipo de operación.
 
         Args:
             table_name (str): Nombre de la tabla.
+            columns (list, opcional): Lista de columnas a seleccionar (solo para SELECT).
             data (dict, opcional): Diccionario con los datos del registro para INSERT y UPDATE.
-            conditions (dict, opcional): Diccionario de condiciones para filtrar los registros.
+            conditions (dict, opcional): Diccionario de condiciones avanzadas para filtrar los registros.
+            order_by (list, opcional): Lista de tuplas (columna, dirección) para ordenar los resultados.
+            limit (int, opcional): Número máximo de registros a devolver.
             query_type (str, opcional): Tipo de query a construir ('SELECT', 'INSERT', 'UPDATE', 'DELETE').
 
         Returns:
@@ -623,41 +620,96 @@ class PgDbToolkit(BaseDbToolkit):
         params = []
 
         if query_type == "SELECT":
-            query = "SELECT * FROM {}".format(table_name)
+            if columns and len(columns) == 1 and columns[0].upper().startswith("COUNT("):
+                # Manejo especial para consultas de COUNT
+                select_clause = columns[0]
+            else:
+                select_clause = "*" if not columns else ", ".join(map(self.sanitize_identifier, columns))
+            
+            query = f"SELECT {select_clause} FROM {table_name}"
+            
             if conditions:
-                condition_str = ' AND '.join(["{} = %s".format(self.sanitize_identifier(k)) for k in conditions.keys()])
-                query += " WHERE {}".format(condition_str)
-                params.extend(conditions.values())
+                where_clauses = []
+                for key, value in conditions.items():
+                    if isinstance(key, tuple):
+                        column, operator = key
+                        if operator.upper() == 'ILIKE':
+                            # Añadir comodines automáticamente para ILIKE
+                            value = f"%{value}%" if '%' not in value else value
+                        where_clauses.append(f"{self.sanitize_identifier(column)} {operator} %s")
+                    else:
+                        where_clauses.append(f"{self.sanitize_identifier(key)} = %s")
+                    params.append(value)
+                
+                query += " WHERE " + " AND ".join(where_clauses)
+
+            
+            if order_by:
+                order_clause = ", ".join([f"{self.sanitize_identifier(col)} {direction}" for col, direction in order_by])
+                query += f" ORDER BY {order_clause}"
+            
+            if limit:
+                query += " LIMIT %s"
+                params.append(limit)
+            
+            if offset:
+                query += " OFFSET %s"
+                params.append(offset)
+
         elif query_type == "INSERT":
             if not data:
                 raise ValueError("INSERT queries require data.")
-            columns = ', '.join([self.sanitize_identifier(col) for col in data.keys()])
+            columns = ', '.join(map(self.sanitize_identifier, data.keys()))
             placeholders = ', '.join(['%s'] * len(data))
-            query = "INSERT INTO {} ({}) VALUES ({})".format(table_name, columns, placeholders)
+            query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
             params.extend(data.values())
+
         elif query_type == "UPDATE":
             if not data:
                 raise ValueError("UPDATE queries require data.")
-            set_str = ', '.join(["{}= %s".format(self.sanitize_identifier(k)) for k in data.keys()])
-            query = "UPDATE {} SET {}".format(table_name, set_str)
+            set_clause = ', '.join([f"{self.sanitize_identifier(k)} = %s" for k in data.keys()])
+            query = f"UPDATE {table_name} SET {set_clause}"
             params.extend(data.values())
             if conditions:
-                condition_str = ' AND '.join(["{}= %s".format(self.sanitize_identifier(k)) for k in conditions.keys()])
-                query += " WHERE {}".format(condition_str)
-                params.extend(conditions.values())
-        elif query_type == "DELETE":
-            if not conditions:
-                raise ValueError("DELETE queries require at least one condition.")
-            condition_str = ' AND '.join(["{}= %s".format(self.sanitize_identifier(k)) for k in conditions.keys()])
-            query = "DELETE FROM {} WHERE {}".format(table_name, condition_str)
-            params.extend(conditions.values())
-        else:
-            raise ValueError("Query type '{}' not recognized.".format(query_type))
+                where_clause, where_params = self._build_where_clause(conditions)
+                query += f" WHERE {where_clause}"
+                params.extend(where_params)
 
-        log.debug(f"Query construido: {query}")
-        log.debug(f"Parámetros: {params}")
+        elif query_type == "DELETE":
+            query = f"DELETE FROM {table_name}"
+            if conditions:
+                where_clause, where_params = self._build_where_clause(conditions)
+                query += f" WHERE {where_clause}"
+                params.extend(where_params)
+            else:
+                raise ValueError("DELETE queries require at least one condition.")
+
+        else:
+            raise ValueError(f"Query type '{query_type}' not recognized.")
 
         return query, params
+
+    def _build_where_clause(self, conditions: dict) -> tuple:
+        """
+        Construye la cláusula WHERE basada en condiciones avanzadas.
+
+        Args:
+            conditions (dict): Diccionario de condiciones.
+
+        Returns:
+            tuple: (where_clause, params)
+        """
+        where_clauses = []
+        params = []
+        for key, value in conditions.items():
+            if isinstance(key, tuple):
+                column, operator = key
+                where_clauses.append(f"{self.sanitize_identifier(column)} {operator} %s")
+            else:
+                where_clauses.append(f"{self.sanitize_identifier(key)} = %s")
+            params.append(value)
+        
+        return " AND ".join(where_clauses), params
 
     def sanitize_identifier(self, identifier: str) -> str:
         """
@@ -776,3 +828,24 @@ class PgDbToolkit(BaseDbToolkit):
         except psycopg.Error as e:
             log.error(f"Error during vector search: {e}")
             raise
+
+    def search_records(self, table_name: str, search_term: str, search_column: str = 'name', 
+                       additional_conditions: dict = None, **kwargs) -> pd.DataFrame:
+        """
+        Realiza una búsqueda de texto en una columna específica.
+
+        Args:
+            table_name (str): Nombre de la tabla en la que buscar.
+            search_term (str): Término de búsqueda.
+            search_column (str): Nombre de la columna en la que buscar (por defecto 'name').
+            additional_conditions (dict): Condiciones adicionales para la búsqueda.
+            **kwargs: Argumentos adicionales para pasar a fetch_records (e.g., limit, offset).
+
+        Returns:
+            pd.DataFrame: DataFrame con los resultados de la búsqueda.
+        """
+        conditions = {(search_column, 'ILIKE'): search_term}
+        if additional_conditions:
+            conditions.update(additional_conditions)
+
+        return self.fetch_records(table_name, conditions=conditions, **kwargs)

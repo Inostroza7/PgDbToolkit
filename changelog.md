@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.12] - 2024-10-03
+
+### Added
+- **Added `search_records` to `sync_db`:** Agrega la función search records que realiza una búsqueda de texto en una columna específica.
+
 ## [0.1.11] - 2024-10-03
 
 ### Added
@@ -9,7 +14,6 @@
 
 ### Added
 - **Added `sync_db`:** Ahora permite agregar order_direction 'ASC' y 'DESC'
-
 
 ## [0.1.9] - 2024-10-03
 
