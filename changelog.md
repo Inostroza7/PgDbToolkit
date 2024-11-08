@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.13] - 2024-10-04
+
+### Added
+- **Added `vector_operations` to `async_db`:** Implemented asynchronous operations for handling vectors in the database.
+   - **`async def add_vector`:** Adds a vector to the specified table asynchronously.
+   - **`async def update_vector`:** Updates an existing vector in the specified table asynchronously.
+   - **`async def delete_vector`:** Deletes a vector from the specified table asynchronously.
+   - **`async def search_vector`:** Searches for vectors in the specified table based on given criteria asynchronously.
+
+### Changed
+- **`sync_db`**: Enhanced vector handling capabilities to support more complex operations.
+- **`async_db`**: Improved performance and reliability of asynchronous database operations.
+
+### Fixed
+- **`sync_db`**: Resolved issues with vector synchronization that caused occasional data inconsistencies.
+- **`async_db`**: Fixed bugs related to asynchronous vector operations that led to unexpected behavior.
+
 ## [0.1.12] - 2024-10-03
 
 ### Added
