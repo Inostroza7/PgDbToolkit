@@ -3,18 +3,36 @@
 import psycopg
 import pandas as pd
 from psycopg import AsyncConnection
+from psycopg.rows import dict_row
+from pgvector.psycopg import register_vector_async
 from contextlib import asynccontextmanager
 import os
-from .log import log
+from .log import Log
 from .base import BaseDbToolkit
+import json
+import numpy as np
+
+logger = Log(__name__)
 
 ##### Context Manager para Conexiones Asíncronas #####
 
 @asynccontextmanager
 async def async_db_connection(db_config):
-    """Context manager para manejar conexiones asíncronas a la base de datos."""
+    """
+    Context manager para manejar conexiones asíncronas a la base de datos.
+    
+    Args:
+        db_config (dict): Configuración de la base de datos.
+
+    Yields:
+        AsyncConnection: Una conexión asíncrona a la base de datos.
+    """
     conn = await AsyncConnection.connect(**db_config)
     try:
+        try:
+            await register_vector_async(conn)
+        except psycopg.ProgrammingError as e:
+            logger.warning(f"Error al registrar el tipo vector: {e}. Continuando sin soporte de vectores.")
         yield conn
     finally:
         await conn.close()
@@ -22,12 +40,44 @@ async def async_db_connection(db_config):
 ##### Clase para Gestión de Operaciones Asíncronas #####
 
 class AsyncPgDbToolkit(BaseDbToolkit):
-    """Gestiona las operaciones asíncronas de la base de datos."""
+    """
+    Gestiona las operaciones asíncronas de la base de datos PostgreSQL.
+    Proporciona métodos para crear, eliminar y modificar bases de datos, tablas y registros.
+    """
+
+    @staticmethod
+    def validate_hashable(data: dict) -> None:
+        """
+        Valida que todos los valores en un diccionario sean hashables.
+
+        Args:
+            data (dict): Diccionario a validar.
+
+        Raises:
+            ValueError: Si se encuentra un tipo no hashable.
+        """
+        for key, value in data.items():
+            if isinstance(value, (list, dict)):
+                raise ValueError(f"Tipo no hashable {type(value)} encontrado para la clave '{key}'. Por favor, conviértalo a un tipo hashable.")
+
+    @staticmethod
+    def sanitize_conditions(conditions: dict) -> dict:
+        """
+        Convierte automáticamente los integers a strings en las condiciones.
+
+        Args:
+            conditions (dict): Diccionario de condiciones.
+
+        Returns:
+            dict: Diccionario de condiciones con integers convertidos a strings.
+        """
+        return {k: str(v) if isinstance(v, int) else v for k, v in conditions.items()}
 
     ###### Métodos de Base de Datos ######
 
     async def create_database(self, database_name: str) -> None:
-        """Crea una nueva base de datos en el servidor PostgreSQL de manera asíncrona.
+        """
+        Crea una nueva base de datos en el servidor PostgreSQL y actualiza la configuración.
 
         Args:
             database_name (str): Nombre de la base de datos que se desea crear.
@@ -45,17 +95,18 @@ class AsyncPgDbToolkit(BaseDbToolkit):
             # Actualizar la configuración para que utilice la nueva base de datos
             self.db_config['dbname'] = database_name
             os.environ['DB_DATABASE'] = database_name
-            log.info(f"Configuration updated to use database {database_name}")
+            logger.info(f"Configuration updated to use database {database_name}")
             
         except psycopg.errors.DuplicateDatabase:
-            log.warning(f"Database {database_name} already exists.")
-            return  # No hacer nada si ya existe
+            logger.warning(f"Database {database_name} already exists.")
+            return
         except psycopg.Error as e:
-            log.error(f"Error creating database {database_name}: {e}")
+            logger.error(f"Error creating database {database_name}: {e}")
             raise
 
     async def delete_database(self, database_name: str) -> None:
-        """Elimina una base de datos en el servidor PostgreSQL de manera asíncrona.
+        """
+        Elimina una base de datos existente en el servidor PostgreSQL.
 
         Args:
             database_name (str): Nombre de la base de datos que se desea eliminar.
@@ -72,25 +123,20 @@ class AsyncPgDbToolkit(BaseDbToolkit):
         drop_database_query = f"DROP DATABASE IF EXISTS {database_name}"
 
         try:
-            # Conéctate a la base de datos 'postgres' para ejecutar las siguientes operaciones.
             async with async_db_connection(self.db_config) as conn:
                 await conn.set_autocommit(True)
-
                 async with conn.transaction():
-                    # Finaliza todas las conexiones activas a la base de datos que quieres eliminar.
                     await conn.execute(terminate_connections_query)
-
                 async with conn.transaction():
-                    # Elimina la base de datos.
                     await conn.execute(drop_database_query)
-
-            log.info(f"Database {database_name} deleted successfully.")
+            logger.info(f"Database {database_name} deleted successfully.")
         except psycopg.Error as e:
-            log.error(f"Error deleting database {database_name}: {e}")
+            logger.error(f"Error deleting database {database_name}: {e}")
             raise
 
     async def get_databases(self) -> pd.DataFrame:
-        """Obtiene una lista de todas las bases de datos en el servidor PostgreSQL de manera asíncrona.
+        """
+        Obtiene una lista de todas las bases de datos en el servidor PostgreSQL.
 
         Returns:
             pd.DataFrame: DataFrame con los nombres de las bases de datos.
@@ -104,16 +150,17 @@ class AsyncPgDbToolkit(BaseDbToolkit):
                 async with conn.transaction():
                     cursor = await conn.execute(query)
                     records = await cursor.fetchall()
-                    columns = [desc.name for desc in cursor.get_attributes()] if records else []
+                    columns = [desc.name for desc in cursor.description]
             return pd.DataFrame(records, columns=columns)
         except psycopg.Error as e:
-            log.error(f"Error fetching databases: {e}")
+            logger.error(f"Error fetching databases: {e}")
             raise
 
     ###### Métodos de Tablas ######
 
     async def create_table(self, table_name: str, schema: dict) -> None:
-        """Crea una nueva tabla en la base de datos con el esquema especificado de manera asíncrona.
+        """
+        Crea una nueva tabla en la base de datos con el esquema especificado.
 
         Args:
             table_name (str): Nombre de la tabla que se desea crear.
@@ -123,20 +170,21 @@ class AsyncPgDbToolkit(BaseDbToolkit):
             psycopg.Error: Si ocurre un error durante la creación de la tabla.
         """
         schema_str = ', '.join([f"{col} {dtype}" if isinstance(dtype, str) else f"{col} {dtype[0]} {dtype[1]}"
-                                for col, dtype in schema.items()])
+                               for col, dtype in schema.items()])
         
         query = f"CREATE TABLE {table_name} ({schema_str})"
         try:
             async with async_db_connection(self.db_config) as conn:
                 async with conn.transaction():
                     await conn.execute(query)
-            log.info(f"Table {table_name} created successfully.")
+            logger.info(f"Table {table_name} created successfully.")
         except psycopg.Error as e:
-            log.error(f"Error creating table {table_name}: {e}")
+            logger.error(f"Error creating table {table_name}: {e}")
             raise
 
     async def delete_table(self, table_name: str) -> None:
-        """Elimina una tabla de la base de datos de manera asíncrona.
+        """
+        Elimina una tabla de la base de datos.
 
         Args:
             table_name (str): Nombre de la tabla que se desea eliminar.
@@ -149,40 +197,29 @@ class AsyncPgDbToolkit(BaseDbToolkit):
             async with async_db_connection(self.db_config) as conn:
                 async with conn.transaction():
                     await conn.execute(query)
-            log.info(f"Table {table_name} deleted successfully.")
+            logger.info(f"Table {table_name} deleted successfully.")
         except psycopg.Error as e:
-            log.error(f"Error deleting table {table_name}: {e}")
+            logger.error(f"Error deleting table {table_name}: {e}")
             raise
 
     async def alter_table(self,
-                          table_name: str,
-                          add_column: tuple = None,
-                          drop_column: str = None,
-                          rename_column: tuple = None,
-                          alter_column_type: tuple = None,
-                          rename_table: str = None,
-                          add_constraint: tuple = None,
-                          drop_constraint: str = None,
-                          set_column_default: tuple = None,
-                          drop_column_default: str = None,
-                          set_column_not_null: str = None,
-                          drop_column_not_null: str = None) -> None:
-        """Realiza múltiples tipos de alteraciones en una tabla existente en la base de datos de manera asíncrona.
-
-        Args:
-            table_name (str): Nombre de la tabla que se desea alterar.
-            add_column (tuple, opcional): Tupla que contiene el nombre de la columna y el tipo de datos a agregar.
-            drop_column (str, opcional): Nombre de la columna que se desea eliminar.
-            rename_column (tuple, opcional): Tupla que contiene el nombre actual y el nuevo nombre de la columna.
-            alter_column_type (tuple, opcional): Tupla que contiene el nombre de la columna y el nuevo tipo de datos.
-            rename_table (str, opcional): Nuevo nombre para la tabla.
-            add_constraint (tuple, opcional): Tupla que contiene el nombre de la restricción y la definición de la restricción.
-            drop_constraint (str, opcional): Nombre de la restricción que se desea eliminar.
-            set_column_default (tuple, opcional): Tupla que contiene el nombre de la columna y el valor por defecto.
-            drop_column_default (str, opcional): Nombre de la columna para eliminar su valor por defecto.
-            set_column_not_null (str, opcional): Nombre de la columna que se debe configurar como no nula.
-            drop_column_not_null (str, opcional): Nombre de la columna para permitir valores nulos.
-
+                         table_name: str,
+                         add_column: tuple = None,
+                         drop_column: str = None,
+                         rename_column: tuple = None,
+                         alter_column_type: tuple = None,
+                         rename_table: str = None,
+                         add_constraint: tuple = None,
+                         drop_constraint: str = None,
+                         set_column_default: tuple = None,
+                         drop_column_default: str = None,
+                         set_column_not_null: str = None,
+                         drop_column_not_null: str = None) -> None:
+        """
+        Realiza múltiples tipos de alteraciones en una tabla existente.
+        
+        Args: [Mismos argumentos que en la versión sync]
+        
         Raises:
             psycopg.Error: Si ocurre un error durante la alteración de la tabla.
         """
@@ -223,16 +260,17 @@ class AsyncPgDbToolkit(BaseDbToolkit):
             async with async_db_connection(self.db_config) as conn:
                 async with conn.transaction():
                     await conn.execute(query)
-            log.info(f"Table {table_name} altered successfully with alterations: {', '.join(alterations)}.")
+            logger.info(f"Table {table_name} altered successfully with alterations: {', '.join(alterations)}.")
         except psycopg.Error as e:
-            log.error(f"Error altering table {table_name}: {e}")
+            logger.error(f"Error altering table {table_name}: {e}")
             raise
 
     async def get_tables(self) -> list:
-        """Obtiene una lista con los nombres de todas las tablas en la base de datos de manera asíncrona.
+        """
+        Obtiene una lista con los nombres de todas las tablas en la base de datos.
 
         Returns:
-            list: Una lista de cadenas que representan los nombres de las tablas en la base de datos.
+            list: Una lista de cadenas que representan los nombres de las tablas.
 
         Raises:
             psycopg.Error: Si ocurre un error durante la consulta.
@@ -247,20 +285,21 @@ class AsyncPgDbToolkit(BaseDbToolkit):
                 async with conn.transaction():
                     cursor = await conn.execute(query)
                     tables = [row[0] for row in await cursor.fetchall()]
-            log.info(f"Retrieved {len(tables)} tables from the database.")
+            logger.info(f"Retrieved {len(tables)} tables from the database.")
             return tables
         except psycopg.Error as e:
-            log.error(f"Error retrieving table names: {e}")
+            logger.error(f"Error retrieving table names: {e}")
             raise
 
     async def get_table_info(self, table_name: str) -> pd.DataFrame:
-        """Obtiene la información de las columnas de una tabla de manera asíncrona, incluyendo nombre, tipo de datos y restricciones.
+        """
+        Obtiene la información de las columnas de una tabla.
 
         Args:
-            table_name (str): Nombre de la tabla de la cual se desea obtener la información.
+            table_name (str): Nombre de la tabla.
 
         Returns:
-            pd.DataFrame: DataFrame con la información de las columnas de la tabla.
+            pd.DataFrame: DataFrame con la información de las columnas.
 
         Raises:
             psycopg.Error: Si ocurre un error durante la consulta.
@@ -285,14 +324,14 @@ class AsyncPgDbToolkit(BaseDbToolkit):
                     cursor = await conn.execute(query, (table_name,))
                     records = await cursor.fetchall()
                     columns = ['column_name', 'data_type', 'is_nullable', 'column_default']
-                    df = pd.DataFrame(records, columns=columns)
-                    return df
+            return pd.DataFrame(records, columns=columns)
         except psycopg.Error as e:
-            log.error(f"Error fetching table info for {table_name}: {e}")
+            logger.error(f"Error fetching table info for {table_name}: {e}")
             raise
 
     async def truncate_table(self, table_name: str) -> None:
-        """Elimina todos los registros de una tabla sin eliminar la tabla de manera asíncrona.
+        """
+        Elimina todos los registros de una tabla sin eliminar la tabla.
 
         Args:
             table_name (str): Nombre de la tabla que será truncada.
@@ -306,157 +345,384 @@ class AsyncPgDbToolkit(BaseDbToolkit):
                 async with conn.transaction():
                     await conn.execute(query)
         except psycopg.Error as e:
-            log.error(f"Error truncating table {table_name}: {e}")
+            logger.error(f"Error truncating table {table_name}: {e}")
             raise
 
     ###### Métodos de Registros ######
 
-    async def insert_record(self, table_name: str, record: dict) -> None:
-        """Inserta un registro en la tabla especificada de manera asíncrona.
+    async def insert_record(self, table_name: str, record) -> None:
+        """
+        Inserta uno o más registros en la tabla especificada.
 
         Args:
-            table_name (str): Nombre de la tabla en la que se insertará el registro.
-            record (dict): Diccionario con los datos del registro a insertar.
+            table_name (str): Nombre de la tabla.
+            record: Puede ser un diccionario, DataFrame o ruta a un archivo CSV.
 
         Raises:
             psycopg.Error: Si ocurre un error durante la inserción.
         """
-        query = self.build_query(table_name, record, query_type="INSERT")
+        if isinstance(record, str) and record.endswith('.csv') and os.path.isfile(record):
+            record = pd.read_csv(record)
+
+        if isinstance(record, pd.DataFrame):
+            records = record.to_dict(orient='records')
+        elif isinstance(record, dict):
+            records = [record]
+        else:
+            raise ValueError("El argumento 'record' debe ser un diccionario, un archivo CSV o un DataFrame.")
+
+        if not records:
+            raise ValueError("No hay registros para insertar.")
+
+        columns = list(records[0].keys())
+        columns_str = ', '.join([self.sanitize_identifier(col) for col in columns])
+        placeholders = ', '.join(['%s'] * len(columns))
+        query = f"INSERT INTO {self.sanitize_identifier(table_name)} ({columns_str}) VALUES ({placeholders})"
+        
+        values = [[record[col] for col in columns] for record in records]
+
         try:
             async with async_db_connection(self.db_config) as conn:
-                async with conn.transaction():
-                    await conn.execute(query, tuple(record.values()))
+                async with conn.cursor() as cur:
+                    for value in values:
+                        await cur.execute(query, value)
+                    await conn.commit()
+            logger.info(f"{len(records)} records inserted successfully into {table_name}.")
         except psycopg.Error as e:
-            log.error(f"Error inserting record into {table_name}: {e}")
+            logger.error(f"Error inserting records into {table_name}: {e}")
             raise
 
-    async def fetch_records(self, table_name: str, conditions: dict = None) -> pd.DataFrame:
-        """Consulta registros de una tabla con condiciones opcionales de manera asíncrona.
+    async def fetch_records(self, 
+                          table_name: str, 
+                          columns: list = None,
+                          conditions: dict = None, 
+                          order_by: list = None, 
+                          limit: int = None,
+                          offset: int = None) -> pd.DataFrame:
+        """
+        Consulta registros con condiciones avanzadas.
 
         Args:
-            table_name (str): Nombre de la tabla de la cual se consultarán los registros.
-            conditions (dict, opcional): Diccionario de condiciones para filtrar los registros.
+            table_name (str): Nombre de la tabla.
+            columns (list, opcional): Lista de columnas a seleccionar.
+            conditions (dict, opcional): Diccionario de condiciones.
+            order_by (list, opcional): Lista de tuplas (columna, dirección).
+            limit (int, opcional): Número máximo de registros.
+            offset (int, opcional): Número de registros a saltar.
 
         Returns:
-            pd.DataFrame: DataFrame con los registros consultados.
+            pd.DataFrame: DataFrame con los resultados.
 
         Raises:
-            Exception: Si ocurre un error durante la consulta.
+            psycopg.Error: Si ocurre un error durante la consulta.
         """
-        query = self.build_query(table_name, conditions, query_type="SELECT")
-        try:
-            async with async_db_connection(self.db_config) as conn:
-                async with conn.transaction():
-                    cursor = await conn.execute(query, tuple(conditions.values()) if conditions else ())
-                    records = await cursor.fetchall()
-                    columns = [desc.name for desc in cursor.get_attributes()] if records else []
-            return pd.DataFrame(records, columns=columns)
-        except Exception as e:
-            log.error(f"Error fetching records from {table_name}: {e}")
-            raise
-
-    async def update_record(self, table_name: str, record: dict, conditions: dict) -> None:
-        """Actualiza un registro en la tabla especificada basado en las condiciones de manera asíncrona.
-
-        Args:
-            table_name (str): Nombre de la tabla en la que se actualizará el registro.
-            record (dict): Diccionario con los datos del registro a actualizar.
-            conditions (dict): Diccionario de condiciones para identificar el registro a actualizar.
-
-        Raises:
-            Exception: Si ocurre un error durante la actualización.
-        """
-        query = self.build_query(table_name, record, conditions, query_type="UPDATE")
-        try:
-            async with async_db_connection(self.db_config) as conn:
-                async with conn.transaction():
-                    await conn.execute(query, tuple(record.values()) + tuple(conditions.values()))
-        except Exception as e:
-            log.error(f"Error updating record in {table_name}: {e}")
-            raise
-
-    async def delete_record(self, table_name: str, conditions: dict) -> None:
-        """Elimina un registro de la tabla especificada basado en las condiciones de manera asíncrona.
-
-        Args:
-            table_name (str): Nombre de la tabla de la cual se eliminará el registro.
-            conditions (dict): Diccionario de condiciones para identificar el registro a eliminar.
-
-        Raises:
-            Exception: Si ocurre un error durante la eliminación.
-        """
-        query = self.build_query(table_name, conditions, query_type="DELETE")
-        try:
-            async with async_db_connection(self.db_config) as conn:
-                async with conn.transaction():
-                    await conn.execute(query, tuple(conditions.values()))
-        except Exception as e:
-            log.error(f"Error deleting record from {table_name}: {e}")
-            raise
-
-    async def execute_query(self, query: str, params: tuple = None) -> pd.DataFrame:
-        """Ejecuta un query SQL personalizado de manera asíncrona.
-
-        Args:
-            query (str): El query SQL a ejecutar.
-            params (tuple, opcional): Parámetros para el query.
-
-        Returns:
-            pd.DataFrame: DataFrame con los resultados del query.
-
-        Raises:
-            Exception: Si ocurre un error durante la ejecución del query.
-        """
+        query, params = self.build_query(
+            table_name, columns, conditions=conditions, 
+            order_by=order_by, limit=limit, offset=offset, 
+            query_type="SELECT"
+        )
         try:
             async with async_db_connection(self.db_config) as conn:
                 async with conn.transaction():
                     cursor = await conn.execute(query, params)
                     records = await cursor.fetchall()
-                    columns = [desc.name for desc in cursor.get_attributes()] if records else []
+                    columns = [desc.name for desc in cursor.description] if records else []
             return pd.DataFrame(records, columns=columns)
-        except Exception as e:
-            log.error(f"Error executing query: {e}")
+        except psycopg.Error as e:
+            logger.error(f"Error fetching records from {table_name}: {e}")
             raise
 
-    ##### Método Auxiliar para Construcción de Queries #####
-
-    def build_query(self, table_name: str, data: dict = None, conditions: dict = None, query_type: str = "INSERT") -> str:
-        """Construye un query SQL basado en el tipo de operación.
+    async def update_record(self, 
+                          table_name: str, 
+                          record: dict, 
+                          conditions: dict) -> None:
+        """
+        Actualiza registros que cumplan con las condiciones especificadas.
 
         Args:
             table_name (str): Nombre de la tabla.
-            data (dict, opcional): Diccionario con los datos del registro.
-            conditions (dict, opcional): Diccionario de condiciones para filtrar los registros.
-            query_type (str, opcional): Tipo de query a construir ('INSERT', 'UPDATE', 'DELETE', 'SELECT').
-
-        Returns:
-            str: Query SQL construido.
+            record (dict): Datos a actualizar.
+            conditions (dict): Condiciones para identificar registros.
 
         Raises:
-            ValueError: Si el tipo de query no es reconocido.
+            psycopg.Error: Si ocurre un error durante la actualización.
         """
-        if query_type == "INSERT":
-            columns = ', '.join([f'"{col}"' for col in data.keys()])
-            values = ', '.join([f'${i + 1}' for i in range(len(data))])
-            return f"INSERT INTO {table_name} ({columns}) VALUES ({values})"
-        
-        elif query_type == "UPDATE":
-            set_str = ', '.join([f'"{k}" = ${i + 1}' for i, k in enumerate(data.keys())])
-            condition_str = ' AND '.join([f'"{k}" = ${i + 1 + len(data)}' for i, k in enumerate(conditions.keys())]) if conditions else ""
-            return f"UPDATE {table_name} SET {set_str}" + (f" WHERE {condition_str}" if condition_str else "")
-        
-        elif query_type == "DELETE":
-            if not conditions or len(conditions) == 0:
-                raise ValueError("DELETE queries require at least one condition.")
-            condition_str = ' AND '.join([f'"{k}" = ${i + 1}' for i, k in enumerate(conditions.keys())])
-            return f"DELETE FROM {table_name} WHERE {condition_str}"
+        try:
+            self.validate_hashable(record)
+            self.validate_hashable(conditions)
+            conditions = self.sanitize_conditions(conditions)
+            
+            query, params = self.build_query(table_name, record, conditions, query_type="UPDATE")
+            
+            async with async_db_connection(self.db_config) as conn:
+                async with conn.transaction():
+                    await conn.execute(query, params)
+            logger.info(f"Record(s) updated successfully in table {table_name}")
+        except psycopg.Error as e:
+            logger.error(f"Error updating record in {table_name}: {e}")
+            raise
 
-        elif query_type == "SELECT":
-            query = f"SELECT * FROM {table_name}"
-            if conditions:
-                condition_str = ' AND '.join([f'"{k}" = ${i + 1}' for i, k in enumerate(conditions.keys())])
-                query += f" WHERE {condition_str}"
-            return query
+    async def delete_record(self, table_name: str, conditions: dict) -> None:
+        """
+        Elimina registros que cumplan con las condiciones especificadas.
+
+        Args:
+            table_name (str): Nombre de la tabla.
+            conditions (dict): Condiciones para identificar registros.
+
+        Raises:
+            psycopg.Error: Si ocurre un error durante la eliminación.
+        """
+        query, params = self.build_query(table_name, conditions=conditions, query_type="DELETE")
+        try:
+            async with async_db_connection(self.db_config) as conn:
+                async with conn.transaction():
+                    await conn.execute(query, params)
+        except psycopg.Error as e:
+            logger.error(f"Error deleting record from {table_name}: {e}")
+            raise
+
+    async def execute_query(self, query: str, params: tuple = None) -> pd.DataFrame:
+        """
+        Ejecuta una consulta SQL personalizada.
+
+        Args:
+            query (str): Consulta SQL a ejecutar.
+            params (tuple, opcional): Parámetros para la consulta.
+
+        Returns:
+            pd.DataFrame: DataFrame con los resultados.
+
+        Raises:
+            psycopg.Error: Si ocurre un error durante la ejecución.
+        """
+        try:
+            async with async_db_connection(self.db_config) as conn:
+                async with conn.transaction():
+                    # Ejecutar la consulta
+                    cursor = await conn.execute(query, params)
+                    
+                    # Verificar si la consulta produce resultados
+                    if cursor.description is not None:
+                        records = await cursor.fetchall()
+                        columns = [desc.name for desc in cursor.description]
+                        return pd.DataFrame(records, columns=columns)
+                    return pd.DataFrame()  # Retornar DataFrame vacío si no hay resultados
+        except psycopg.Error as e:
+            logger.error(f"Error executing query: {e}")
+            raise
         
+    ##### Métodos Auxiliares #####
+
+    def build_query(self, 
+                    table_name: str, 
+                    data: dict = None, 
+                    conditions: dict = None,
+                    columns: list = None,
+                    order_by: list = None,
+                    limit: int = None,
+                    offset: int = None,
+                    query_type: str = "SELECT") -> tuple:
+        """
+        Construye una consulta SQL basada en el tipo de operación.
+
+        Args:
+            table_name (str): Nombre de la tabla.
+            data (dict, opcional): Datos para INSERT/UPDATE.
+            conditions (dict, opcional): Condiciones WHERE.
+            columns (list, opcional): Columnas para SELECT.
+            order_by (list, opcional): Orden para SELECT.
+            limit (int, opcional): Límite para SELECT.
+            offset (int, opcional): Offset para SELECT.
+            query_type (str): Tipo de consulta.
+
+        Returns:
+            tuple: (query, params)
+        """
+        table_name = self.sanitize_identifier(table_name)
+        params = []
+
+        if query_type == "SELECT":
+            select_clause = "*" if not columns else ", ".join(map(self.sanitize_identifier, columns))
+            query = f"SELECT {select_clause} FROM {table_name}"
+            
+            if conditions:
+                where_clause, where_params = self._build_where_clause(conditions)
+                query += f" WHERE {where_clause}"
+                params.extend(where_params)
+
+            if order_by:
+                order_clause = ", ".join([f"{col} {direction}" for col, direction in order_by])
+                query += f" ORDER BY {order_clause}"
+            
+            if limit:
+                query += " LIMIT %s"
+                params.append(limit)
+            
+            if offset:
+                query += " OFFSET %s"
+                params.append(offset)
+
+        elif query_type == "INSERT":
+            if not data:
+                raise ValueError("INSERT queries require data.")
+            columns = ', '.join(map(self.sanitize_identifier, data.keys()))
+            placeholders = ', '.join(['%s'] * len(data))
+            query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+            params.extend(data.values())
+
+        elif query_type == "UPDATE":
+            if not data:
+                raise ValueError("UPDATE queries require data.")
+            set_clause = ', '.join([f"{self.sanitize_identifier(k)} = %s" for k in data.keys()])
+            query = f"UPDATE {table_name} SET {set_clause}"
+            params.extend(data.values())
+            
+            if conditions:
+                where_clause, where_params = self._build_where_clause(conditions)
+                query += f" WHERE {where_clause}"
+                params.extend(where_params)
+
+        elif query_type == "DELETE":
+            query = f"DELETE FROM {table_name}"
+            if conditions:
+                where_clause, where_params = self._build_where_clause(conditions)
+                query += f" WHERE {where_clause}"
+                params.extend(where_params)
+            else:
+                raise ValueError("DELETE queries require at least one condition.")
+
+        return query, params
+
+    def _build_where_clause(self, conditions: dict) -> tuple:
+        """
+        Construye la cláusula WHERE para las consultas.
+
+        Args:
+            conditions (dict): Diccionario de condiciones.
+
+        Returns:
+            tuple: (where_clause, params)
+        """
+        where_clauses = []
+        params = []
+        for key, value in conditions.items():
+            if isinstance(key, tuple):
+                column, operator = key
+                where_clauses.append(f"{self.sanitize_identifier(column)} {operator} %s")
+            else:
+                where_clauses.append(f"{self.sanitize_identifier(key)} = %s")
+            params.append(value)
+        
+        return " AND ".join(where_clauses), params
+
+    def sanitize_identifier(self, identifier: str) -> str:
+        """
+        Sanitiza un identificador SQL.
+
+        Args:
+            identifier (str): Identificador a sanitizar.
+
+        Returns:
+            str: Identificador sanitizado.
+        """
+        return '"{}"'.format(identifier.replace('"', '""'))
+
+    def sanitize_value(self, value):
+        """
+        Sanitiza un valor para inserción segura.
+
+        Args:
+            value: Valor a sanitizar.
+
+        Returns:
+            El valor sanitizado.
+        """
+        if isinstance(value, (list, dict)):
+            return json.dumps(value)
+        elif isinstance(value, (int, float, str, bool, type(None))):
+            return value
         else:
-            raise ValueError(f"Tipo de query {query_type} no reconocido.")
+            return str(value)
+
+    async def create_vector_extension(self) -> None:
+        """
+        Habilita la extensión 'vector' en la base de datos.
+
+        Raises:
+            psycopg.Error: Si ocurre un error al habilitar la extensión.
+        """
+        query = "CREATE EXTENSION IF NOT EXISTS vector;"
+        try:
+            async with async_db_connection(self.db_config) as conn:
+                async with conn.transaction():
+                    await conn.execute(query)
+            logger.info("Vector extension enabled successfully.")
+        except psycopg.Error as e:
+            logger.error(f"Error enabling vector extension: {e}")
+            raise
+
+    async def search_vectors(self,
+                        vector: list,
+                        table_name: str = 'vectors',
+                        limit: int = 5,
+                        vector_column: str = 'embedding',
+                        agent_id: str = None,
+                        agent_column: str = 'agent_id',
+                        vector_status: int = None,
+                        vector_status_column: str = 'vector_status') -> pd.DataFrame:
+        """
+        Realiza una búsqueda asíncrona de vectores similares usando una función optimizada de PostgreSQL.
+
+        Args:
+            vector (list): Vector de consulta para la búsqueda de similitud.
+            table_name (str, opcional): Nombre de la tabla donde se encuentran los vectores.
+            limit (int, opcional): Número máximo de resultados a retornar.
+            vector_column (str, opcional): Nombre de la columna que almacena los vectores.
+            agent_id (str, opcional): ID del agente para filtrar vectores por archivos asignados.
+            agent_column (str, opcional): Nombre de la columna que almacena el ID del agente.
+            vector_status (int, opcional): Estado del vector para filtrar los resultados.
+            vector_status_column (str, opcional): Nombre de la columna que almacena el estado del vector.
+
+        Returns:
+            pd.DataFrame: DataFrame con los registros más similares, incluyendo puntuación de similitud.
+
+        Raises:
+            psycopg.Error: Si ocurre un error durante la búsqueda.
+        """
+        try:
+            query = """
+                SELECT * FROM search_vectors(
+                    %s::vector,
+                    %s,
+                    %s,
+                    %s,
+                    %s::uuid,
+                    %s,
+                    %s::integer,
+                    %s
+                );
+            """
+            
+            params = [
+                np.array(vector),
+                table_name,
+                limit,
+                vector_column,
+                agent_id,
+                agent_column,
+                vector_status,
+                vector_status_column
+            ]
+
+            async with async_db_connection(self.db_config) as conn:
+                async with conn.transaction():
+                    cursor = await conn.execute(query, params)
+                    records = await cursor.fetchall()
+                    columns = [desc.name for desc in cursor.description] if cursor.description else []
+                    
+            return pd.DataFrame(records, columns=columns)
+
+        except psycopg.Error as e:
+            logger.error(f"Error during vector search: {e}")
+            raise

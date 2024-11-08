@@ -5,10 +5,13 @@ from pgvector.psycopg import register_vector
 import pandas as pd
 from contextlib import contextmanager
 import os
-from .log import log
+from .log import Log
 from .base import BaseDbToolkit
 import json
 import numpy as np
+from typing import Optional, List, Dict, Union, Tuple
+
+logger = Log(__name__)
 
 ##### Context Manager para Conexiones Sincrónicas #####
 
@@ -28,7 +31,7 @@ def db_connection(db_config):
         try:
             register_vector(conn)
         except psycopg.ProgrammingError as e:
-            log.warning(f"Error al registrar el tipo vector: {e}. Continuando sin soporte de vectores.")
+            logger.warning(f"Error al registrar el tipo vector: {e}. Continuando sin soporte de vectores.")
         yield conn
     finally:
         conn.close()
@@ -96,13 +99,13 @@ class PgDbToolkit(BaseDbToolkit):
             # Actualizar la configuración para que utilice la nueva base de datos
             self.db_config['dbname'] = database_name
             os.environ['DB_DATABASE'] = database_name
-            log.info(f"Configuration updated to use database {database_name}")
+            logger.info(f"Configuration updated to use database {database_name}")
             
         except psycopg.errors.DuplicateDatabase:
-            log.warning(f"Database {database_name} already exists.")
+            logger.warning(f"Database {database_name} already exists.")
             return  # No hacer nada si ya existe
         except psycopg.Error as e:
-            log.error(f"Error creating database {database_name}: {e}")
+            logger.error(f"Error creating database {database_name}: {e}")
             raise
         
     def delete_database(self, database_name: str) -> None:
@@ -136,9 +139,9 @@ class PgDbToolkit(BaseDbToolkit):
                     # Elimina la base de datos.
                     cur.execute(drop_database_query)
 
-            log.info(f"Database {database_name} deleted successfully.")
+            logger.info(f"Database {database_name} deleted successfully.")
         except psycopg.Error as e:
-            log.error(f"Error deleting database {database_name}: {e}")
+            logger.error(f"Error deleting database {database_name}: {e}")
             raise
 
     def get_databases(self) -> pd.DataFrame:
@@ -160,7 +163,7 @@ class PgDbToolkit(BaseDbToolkit):
                     columns = [desc[0] for desc in cur.description]
             return pd.DataFrame(records, columns=columns)
         except psycopg.Error as e:
-            log.error(f"Error fetching databases: {e}")
+            logger.error(f"Error fetching databases: {e}")
             raise
 
     ###### Métodos de Tablas ######
@@ -191,9 +194,9 @@ class PgDbToolkit(BaseDbToolkit):
                 with conn.cursor() as cur:
                     cur.execute(query)
                     conn.commit()
-            log.info(f"Table {table_name} created successfully.")
+            logger.info(f"Table {table_name} created successfully.")
         except psycopg.Error as e:
-            log.error(f"Error creating table {table_name}: {e}")
+            logger.error(f"Error creating table {table_name}: {e}")
             raise
 
     def delete_table(self, table_name: str) -> None:
@@ -203,7 +206,7 @@ class PgDbToolkit(BaseDbToolkit):
         Este método ejecuta una consulta SQL para eliminar una tabla existente con el
         nombre especificado. Si la tabla no existe, la consulta no genera errores gracias
         a la cláusula `IF EXISTS`. En caso de que ocurra un error diferente, se captura y
-        se registra en el log, elevando una excepción para su manejo.
+        se registra en el logger, elevando una excepción para su manejo.
 
         Args:
             table_name (str): Nombre de la tabla que se desea eliminar.
@@ -220,9 +223,9 @@ class PgDbToolkit(BaseDbToolkit):
                 with conn.cursor() as cur:
                     cur.execute(query)
                     conn.commit()
-            log.info(f"Table {table_name} deleted successfully.")
+            logger.info(f"Table {table_name} deleted successfully.")
         except psycopg.Error as e:
-            log.error(f"Error deleting table {table_name}: {e}")
+            logger.error(f"Error deleting table {table_name}: {e}")
             raise
 
     def alter_table(self,
@@ -309,9 +312,9 @@ class PgDbToolkit(BaseDbToolkit):
                 with conn.cursor() as cur:
                     cur.execute(query)
                     conn.commit()
-            log.info(f"Table {table_name} altered successfully with alterations: {', '.join(alterations)}.")
+            logger.info(f"Table {table_name} altered successfully with alterations: {', '.join(alterations)}.")
         except psycopg.Error as e:
-            log.error(f"Error altering table {table_name}: {e}")
+            logger.error(f"Error altering table {table_name}: {e}")
             raise
 
     def get_tables(self) -> list:
@@ -342,10 +345,10 @@ class PgDbToolkit(BaseDbToolkit):
                 with conn.cursor() as cur:
                     cur.execute(query)
                     tables = [row[0] for row in cur.fetchall()]
-            log.info(f"Retrieved {len(tables)} tables from the database.")
+            logger.info(f"Retrieved {len(tables)} tables from the database.")
             return tables
         except psycopg.Error as e:
-            log.error(f"Error retrieving table names: {e}")
+            logger.error(f"Error retrieving table names: {e}")
             raise
 
 
@@ -390,7 +393,7 @@ class PgDbToolkit(BaseDbToolkit):
                     df = pd.DataFrame(records, columns=columns)
                     return df
         except psycopg.Error as e:
-            log.error(f"Error fetching table info for {table_name}: {e}")
+            logger.error(f"Error fetching table info for {table_name}: {e}")
             raise
 
 
@@ -411,7 +414,7 @@ class PgDbToolkit(BaseDbToolkit):
                     cur.execute(query)
                     conn.commit()
         except psycopg.Error as e:
-            log.error(f"Error truncating table {table_name}: {e}")
+            logger.error(f"Error truncating table {table_name}: {e}")
             raise
 
     ###### Métodos de Registros ######
@@ -462,9 +465,9 @@ class PgDbToolkit(BaseDbToolkit):
                     # Insertar múltiples registros de una vez
                     cur.executemany(query, values)
                     conn.commit()
-                log.info(f"{len(records)} records inserted successfully into {table_name}.")
+                logger.info(f"{len(records)} records inserted successfully into {table_name}.")
         except psycopg.Error as e:
-            log.error(f"Error inserting records into {table_name}: {e}")
+            logger.error(f"Error inserting records into {table_name}: {e}")
             raise
 
     def fetch_records(self, 
@@ -527,15 +530,15 @@ class PgDbToolkit(BaseDbToolkit):
                 with conn.cursor() as cur:
                     cur.execute(query, params)
                     conn.commit()
-            log.info(f"Registro actualizado exitosamente en la tabla {table_name}")
+            logger.info(f"Registro actualizado exitosamente en la tabla {table_name}")
         except ValueError as e:
-            log.error(f"Error de validación al actualizar registro en {table_name}: {e}")
+            logger.error(f"Error de validación al actualizar registro en {table_name}: {e}")
             raise
         except psycopg.Error as e:
-            log.error(f"Error de base de datos al actualizar registro en {table_name}: {e}")
+            logger.error(f"Error de base de datos al actualizar registro en {table_name}: {e}")
             raise
         except Exception as e:
-            log.error(f"Error inesperado al actualizar registro en {table_name}: {e}")
+            logger.error(f"Error inesperado al actualizar registro en {table_name}: {e}")
             raise
 
 
@@ -557,7 +560,7 @@ class PgDbToolkit(BaseDbToolkit):
                     cur.execute(query, tuple(conditions.values()))
                     conn.commit()
         except psycopg.Error as e:
-            log.error(f"Error deleting record from {table_name}: {e}")
+            logger.error(f"Error deleting record from {table_name}: {e}")
             raise
 
     def execute_query(self, query: str, params: tuple = None) -> pd.DataFrame:
@@ -586,7 +589,7 @@ class PgDbToolkit(BaseDbToolkit):
                         conn.commit()  # Para operaciones de modificación
                         return pd.DataFrame()  # Retornar un DataFrame vacío para mantener compatibilidad
         except psycopg.Error as e:
-            log.error(f"Error executing query: {e}")
+            logger.error(f"Error executing query: {e}")
             raise
 
     ##### Método Auxiliar para Construcción de Queries #####
@@ -756,9 +759,9 @@ class PgDbToolkit(BaseDbToolkit):
                 with conn.cursor() as cur:
                     cur.execute(query)
                     conn.commit()
-            log.info("Extensión 'vector' habilitada exitosamente en la base de datos.")
+            logger.info("Extensión 'vector' habilitada exitosamente en la base de datos.")
         except psycopg.Error as e:
-            log.error(f"Error al habilitar la extensión 'vector': {e}")
+            logger.error(f"Error al habilitar la extensión 'vector': {e}")
             raise
 
     def search_vectors(self,
@@ -771,62 +774,58 @@ class PgDbToolkit(BaseDbToolkit):
                     vector_status: int = None,
                     vector_status_column: str = 'vector_status') -> pd.DataFrame:
         """
-        Realiza una búsqueda de vectores en la base de datos utilizando similitud coseno.
+        Realiza una búsqueda optimizada de vectores utilizando una función de base de datos dedicada.
 
         Args:
-            vector (np.ndarray): El vector de consulta.
-            table_name (str, opcional): Nombre de la tabla donde se encuentran los vectores. Por defecto es 'vectors'.
-            limit (int, opcional): Número máximo de resultados a retornar. Por defecto es 5.
-            vector_column (str, opcional): Nombre de la columna que almacena los vectores. Por defecto es 'embedding'.
-            agent_id (str, opcional): ID del agente cuyos vectores serán buscados.
-            agent_column (str, opcional): Nombre de la columna que almacena el ID del agente. Por defecto es 'agent_id'.
-            vector_status (int, opcional): Estado del vector para filtrar los resultados.
-            vector_status_column (str, opcional): Nombre de la columna que almacena el estado del vector. Por defecto es 'vector_status'.
+            vector (list): El vector de consulta.
+            table_name (str, opcional): Nombre de la tabla donde se encuentran los vectores.
+            limit (int, opcional): Número máximo de resultados a retornar.
+            vector_column (str, opcional): Nombre de la columna que almacena los vectores.
+            agent_id (str, opcional): ID del agente para filtrar los vectores.
+            agent_column (str, opcional): Nombre de la columna del ID del agente.
+            vector_status (int, opcional): Estado del vector para filtrar.
+            vector_status_column (str, opcional): Nombre de la columna de estado.
 
         Returns:
-            pd.DataFrame: DataFrame con los registros más similares.
+            pd.DataFrame: DataFrame con los registros más similares y sus puntuaciones.
 
         Raises:
             psycopg.Error: Si ocurre un error durante la consulta.
         """
-        vector = np.array(vector)
-        
-        # Construir la cláusula WHERE dinámica
-        where_conditions = []
-        params = []
-
-        if agent_id is not None:
-            where_conditions.append(f"{self.sanitize_identifier(agent_column)} = %s")
-            params.append(agent_id)
-
-        if vector_status is not None:
-            where_conditions.append(f"{self.sanitize_identifier(vector_status_column)} = %s")
-            params.append(vector_status)
-
-        # Unir las condiciones con 'AND' si hay más de una
-        where_clause = ''
-        if where_conditions:
-            where_clause = 'WHERE ' + ' AND '.join(where_conditions)
-
-        # Construir la consulta SQL
-        query = f"""
-        SELECT *, 1 - ({self.sanitize_identifier(vector_column)} <=> %s) AS cosine_similarity
-        FROM {self.sanitize_identifier(table_name)}
-        {where_clause}
-        ORDER BY {self.sanitize_identifier(vector_column)} <=> %s
-        LIMIT %s;
-        """
-        # Agregar el vector y el límite a los parámetros
-        params = [vector] + params + [vector, limit]
-
         try:
+            query = """
+                SELECT * FROM search_vectors(
+                    %s::vector,
+                    %s,
+                    %s,
+                    %s,
+                    %s::uuid,
+                    %s,
+                    %s::integer,
+                    %s
+                );
+            """
+            
+            params = [
+                vector,
+                table_name,
+                limit,
+                vector_column,
+                agent_id,
+                agent_column,
+                vector_status,
+                vector_status_column
+            ]
+
             with db_connection(self.db_config) as conn:
-                with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+                with conn.cursor() as cur:
                     cur.execute(query, params)
                     records = cur.fetchall()
-            return pd.DataFrame(records)
+                    columns = [desc[0] for desc in cur.description]
+                    return pd.DataFrame(records, columns=columns)
+
         except psycopg.Error as e:
-            log.error(f"Error during vector search: {e}")
+            logger.error(f"Error during vector search: {e}")
             raise
 
     def search_records(self, table_name: str, search_term: str, search_column: str = 'name', 
