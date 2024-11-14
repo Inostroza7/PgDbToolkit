@@ -10,6 +10,7 @@ from .base import BaseDbToolkit
 import json
 import numpy as np
 from typing import Optional, List, Dict, Union, Tuple
+from pathlib import Path
 
 logger = Log(__name__)
 
@@ -419,17 +420,42 @@ class PgDbToolkit(BaseDbToolkit):
 
     ###### Métodos de Registros ######
 
-    def insert_record(self, table_name: str, record) -> None:
+    def insert_record(self, table_name: str, record) -> Union[str, List[str]]:
         """
         Inserta uno o más registros en la tabla especificada de manera sincrónica.
-        Soporta la inserción desde un diccionario, un archivo CSV o un DataFrame de Pandas.
+        Soporta la inserción desde un diccionario, una lista de diccionarios, un archivo CSV o un DataFrame de Pandas.
 
         Args:
             table_name (str): Nombre de la tabla en la que se insertará el registro.
-            record (dict, str o pd.DataFrame): Diccionario, archivo CSV o DataFrame de Pandas que contiene los datos.
+            record (Union[dict, List[dict], str, pd.DataFrame]): Los datos a insertar. Puede ser:
+                - Un diccionario individual
+                - Una lista de diccionarios
+                - Una ruta a un archivo CSV
+                - Un DataFrame de Pandas
+
+        Returns:
+            Union[str, List[str]]: ID o lista de IDs de los registros insertados.
 
         Raises:
             psycopg.Error: Si ocurre un error durante la inserción.
+            ValueError: Si el argumento record no es válido o está vacío.
+
+        Examples:
+            # Insertar un solo registro
+            >>> id = db.insert_record("cars", {"name": "Porsche"})
+            
+            # Insertar múltiples registros desde una lista
+            >>> ids = db.insert_record("cars", [
+            ...     {"name": "Porsche"},
+            ...     {"name": "Ferrari"},
+            ...     {"name": "Audi"}
+            ... ])
+            
+            # Insertar desde un DataFrame
+            >>> ids = db.insert_record("cars", df)
+            
+            # Insertar desde un CSV
+            >>> ids = db.insert_record("cars", "cars.csv")
         """
         # Si el record es un archivo CSV
         if isinstance(record, str) and record.endswith('.csv') and os.path.isfile(record):
@@ -440,21 +466,32 @@ class PgDbToolkit(BaseDbToolkit):
         if isinstance(record, pd.DataFrame):
             # Convertir el DataFrame a una lista de diccionarios
             records = record.to_dict(orient='records')
-        # Si el record es un diccionario, lo convertimos en una lista con un solo elemento
+        # Si el record es una lista de diccionarios
+        elif isinstance(record, list):
+            if not record or not all(isinstance(item, dict) for item in record):
+                raise ValueError("Si se proporciona una lista, todos los elementos deben ser diccionarios")
+            records = record
+        # Si el record es un diccionario individual
         elif isinstance(record, dict):
             records = [record]
         else:
-            raise ValueError("El argumento 'record' debe ser un diccionario, un archivo CSV o un DataFrame de Pandas.")
+            raise ValueError("El argumento 'record' debe ser un diccionario, una lista de diccionarios, un archivo CSV o un DataFrame de Pandas.")
 
-        # Obtener columnas de los registros
+        # Verificar que hay registros para insertar
         if not records:
-            raise ValueError("No records to insert.")
+            raise ValueError("No hay registros para insertar.")
+
+        # Obtener columnas del primer registro
         columns = records[0].keys()
         columns_str = ', '.join([self.sanitize_identifier(col) for col in columns])
         placeholders = ', '.join(['%s'] * len(columns))
 
-        # Crear la consulta SQL para la inserción
-        query = f"INSERT INTO {self.sanitize_identifier(table_name)} ({columns_str}) VALUES ({placeholders})"
+        # Crear la consulta SQL para la inserción con RETURNING id
+        query = f"""
+            INSERT INTO {self.sanitize_identifier(table_name)} ({columns_str}) 
+            VALUES ({placeholders})
+            RETURNING id
+        """
         
         # Preparar los valores de los registros
         values = [tuple(rec[col] for col in columns) for rec in records]
@@ -462,10 +499,22 @@ class PgDbToolkit(BaseDbToolkit):
         try:
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
-                    # Insertar múltiples registros de una vez
-                    cur.executemany(query, values)
-                    conn.commit()
-                logger.info(f"{len(records)} records inserted successfully into {table_name}.")
+                    if len(records) == 1:
+                        # Si es un solo registro, ejecutar una vez y retornar un solo ID
+                        cur.execute(query, values[0])
+                        inserted_id = cur.fetchone()[0]
+                        conn.commit()
+                        logger.info(f"1 record inserted successfully into {table_name} with id {inserted_id}.")
+                        return str(inserted_id)
+                    else:
+                        # Para múltiples registros, usar executemany con una lista para almacenar IDs
+                        inserted_ids = []
+                        for value in values:
+                            cur.execute(query, value)
+                            inserted_ids.append(str(cur.fetchone()[0]))
+                        conn.commit()
+                        logger.info(f"{len(records)} records inserted successfully into {table_name}.")
+                        return inserted_ids
         except psycopg.Error as e:
             logger.error(f"Error inserting records into {table_name}: {e}")
             raise
@@ -502,43 +551,59 @@ class PgDbToolkit(BaseDbToolkit):
         )
         return self.execute_query(query, params)
 
-    def update_record(self, 
-                      table_name: str, 
-                      record: dict, 
-                      conditions: dict,
-                      ) -> None:
+    def update_records(self, 
+                    table_name: str, 
+                    records: Union[dict, List[dict]], 
+                    conditions: Union[dict, List[dict]]) -> None:
         """
-        Actualiza un registro en la tabla especificada basado en las condiciones.
+        Actualiza uno o múltiples registros en la tabla especificada.
 
         Args:
-            table_name (str): Nombre de la tabla en la que se actualizará el registro.
-            record (dict): Diccionario con los datos del registro a actualizar.
-            conditions (dict): Diccionario de condiciones para identificar el registro a actualizar.
+            table_name (str): Nombre de la tabla en la que se actualizarán los registros.
+            records (Union[dict, List[dict]]): Diccionario o lista de diccionarios con los datos a actualizar.
+            conditions (Union[dict, List[dict]]): Diccionario o lista de diccionarios de condiciones para identificar los registros.
 
         Raises:
-            ValueError: Si se encuentran tipos de datos inválidos en record o conditions.
+            ValueError: Si se encuentran tipos de datos inválidos en records o conditions.
             psycopg.Error: Si ocurre un error durante la actualización en la base de datos.
         """
         try:
-            self.validate_hashable(record)
-            self.validate_hashable(conditions)
-            conditions = self.sanitize_conditions(conditions)
+            # Convertir a listas si se proporcionó un solo registro
+            if isinstance(records, dict):
+                records = [records]
+            if isinstance(conditions, dict):
+                conditions = [conditions]
             
-            query, params = self.build_query(table_name, record, conditions, query_type="UPDATE")
-            
+            if len(records) != len(conditions):
+                raise ValueError("El número de registros y condiciones deben coincidir.")
+
+            for record in records:
+                self.validate_hashable(record)
+            for condition in conditions:
+                self.validate_hashable(condition)
+                condition = self.sanitize_conditions(condition)
+
+            # Iniciar la transacción
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(query, params)
+                    for record, condition in zip(records, conditions):
+                        query, params = self.build_query(
+                            table_name=table_name,
+                            data=record,
+                            conditions=condition,
+                            query_type="UPDATE"
+                        )
+                        cur.execute(query, params)
                     conn.commit()
-            logger.info(f"Registro actualizado exitosamente en la tabla {table_name}")
+            logger.info(f"{len(records)} registros actualizados exitosamente en la tabla {table_name}")
         except ValueError as e:
-            logger.error(f"Error de validación al actualizar registro en {table_name}: {e}")
+            logger.error(f"Error de validación al actualizar registros en {table_name}: {e}")
             raise
         except psycopg.Error as e:
-            logger.error(f"Error de base de datos al actualizar registro en {table_name}: {e}")
+            logger.error(f"Error de base de datos al actualizar registros en {table_name}: {e}")
             raise
         except Exception as e:
-            logger.error(f"Error inesperado al actualizar registro en {table_name}: {e}")
+            logger.error(f"Error inesperado al actualizar registros en {table_name}: {e}")
             raise
 
 
@@ -580,14 +645,17 @@ class PgDbToolkit(BaseDbToolkit):
         try:
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
+                    # Log de la query y parámetros para debugging
+                    logger.debug(f"Executing query: {query} with params: {params}")
+                    
                     cur.execute(query, params)
+                    conn.commit()  # Commit inmediato para asegurar que los cambios se guarden
+                    
                     if cur.description:  # Solo intenta fetchall si hay resultados
                         records = cur.fetchall()
                         columns = [desc[0] for desc in cur.description]
                         return pd.DataFrame(records, columns=columns)
-                    else:
-                        conn.commit()  # Para operaciones de modificación
-                        return pd.DataFrame()  # Retornar un DataFrame vacío para mantener compatibilidad
+                    return pd.DataFrame()  # Retornar un DataFrame vacío para mantener compatibilidad
         except psycopg.Error as e:
             logger.error(f"Error executing query: {e}")
             raise
@@ -764,72 +832,54 @@ class PgDbToolkit(BaseDbToolkit):
             logger.error(f"Error al habilitar la extensión 'vector': {e}")
             raise
 
-    def search_vectors(self,
-                    vector: list,
-                    table_name: str = 'vectors',
+    def search_vectors(self, 
+                    search_vector: List[float], 
+                    agent_id: Optional[str] = None,
                     limit: int = 5,
-                    vector_column: str = 'embedding',
-                    agent_id: str = None,
-                    agent_column: str = 'agent_id',
-                    vector_status: int = None,
-                    vector_status_column: str = 'vector_status') -> pd.DataFrame:
+                    ) -> pd.DataFrame:
         """
-        Realiza una búsqueda optimizada de vectores utilizando una función de base de datos dedicada.
-
+        Realiza una búsqueda de vectores similares usando la función `search_vectors` en la base de datos.
+        
         Args:
-            vector (list): El vector de consulta.
-            table_name (str, opcional): Nombre de la tabla donde se encuentran los vectores.
-            limit (int, opcional): Número máximo de resultados a retornar.
-            vector_column (str, opcional): Nombre de la columna que almacena los vectores.
-            agent_id (str, opcional): ID del agente para filtrar los vectores.
-            agent_column (str, opcional): Nombre de la columna del ID del agente.
-            vector_status (int, opcional): Estado del vector para filtrar.
-            vector_status_column (str, opcional): Nombre de la columna de estado.
+            search_vector (List[float]): Vector de búsqueda con dimensión 1536.
+            p_limit (int): Número máximo de resultados a retornar. Por defecto es 5.
+            p_agent_id (Optional[str]): ID opcional del agente para filtrar resultados.
 
         Returns:
-            pd.DataFrame: DataFrame con los registros más similares y sus puntuaciones.
-
-        Raises:
-            psycopg.Error: Si ocurre un error durante la consulta.
+            pd.DataFrame: DataFrame con los resultados de la búsqueda.
         """
-        try:
-            query = """
-                SELECT * FROM search_vectors(
-                    %s::vector,
-                    %s,
-                    %s,
-                    %s,
-                    %s::uuid,
-                    %s,
-                    %s::integer,
-                    %s
-                );
+        
+        # Convertir el vector a una representación de texto adecuada para la consulta SQL
+        search_vector_str = f"ARRAY[{', '.join(map(str, search_vector))}]::vector"
+        
+        # Construir la consulta usando f-strings para manejar el UUID y el vector
+        if agent_id:
+            query = f"""
+                SELECT * FROM search_vectors({search_vector_str}, {limit}, '{agent_id}'::uuid);
             """
-            
-            params = [
-                vector,
-                table_name,
-                limit,
-                vector_column,
-                agent_id,
-                agent_column,
-                vector_status,
-                vector_status_column
-            ]
-
+        else:
+            query = f"""
+                SELECT * FROM search_vectors({search_vector_str}, {limit}, NULL);
+            """
+        
+        try:
             with db_connection(self.db_config) as conn:
                 with conn.cursor() as cur:
-                    cur.execute(query, params)
+                    # Ejecutar la consulta sin parámetros adicionales
+                    cur.execute(query)
                     records = cur.fetchall()
                     columns = [desc[0] for desc in cur.description]
                     return pd.DataFrame(records, columns=columns)
-
         except psycopg.Error as e:
             logger.error(f"Error during vector search: {e}")
             raise
 
-    def search_records(self, table_name: str, search_term: str, search_column: str = 'name', 
-                       additional_conditions: dict = None, **kwargs) -> pd.DataFrame:
+    def search_records(self, 
+                       table_name: str, 
+                       search_term: str, 
+                       search_column: str = 'name', 
+                       additional_conditions: dict = None, 
+                       **kwargs) -> pd.DataFrame:
         """
         Realiza una búsqueda de texto en una columna específica.
 
@@ -848,3 +898,167 @@ class PgDbToolkit(BaseDbToolkit):
             conditions.update(additional_conditions)
 
         return self.fetch_records(table_name, conditions=conditions, **kwargs)
+
+    def upload_vectors_file(self,
+                        filepath: str,
+                        client_id: str,
+                        file_name: str = None) -> dict:
+        """
+        Procesa un archivo CSV/Excel, genera vectores y los almacena en la base de datos.
+
+        Args:
+            filepath: Ruta al archivo (CSV o Excel)
+            client_id: UUID del cliente
+            file_name: Nombre personalizado para el archivo (opcional)
+
+        Returns:
+            dict: Información del procesamiento (file_id, total_vectors, file_name)
+
+        Raises:
+            ValueError: Si el cliente no existe o el formato de archivo no es soportado
+            FileNotFoundError: Si el archivo no existe
+        """
+        try:
+            # Validar archivo
+            file_path = Path(filepath)
+            if not file_path.exists():
+                raise FileNotFoundError(f"File not found: {filepath}")
+            logger.info(f"Processing file: {filepath}")
+
+            # Validar cliente
+            client_exists = self.fetch_records(
+                "clients",
+                conditions={"id": client_id}
+            )
+            if client_exists.empty:
+                raise ValueError(f"Client with id {client_id} not found")
+            logger.info(f"Client {client_id} validated successfully")
+
+            # Leer archivo
+            try:
+                if file_path.suffix.lower() == '.csv':
+                    df = pd.read_csv(filepath)
+                elif file_path.suffix.lower() in ['.xlsx', '.xls']:
+                    df = pd.read_excel(filepath)
+                else:
+                    raise ValueError("Unsupported file format. Use CSV or Excel files.")
+            except Exception as e:
+                raise ValueError(f"Error reading file: {str(e)}")
+            
+            logger.info(f"File {filepath} read successfully with {len(df)} rows")
+
+            # Usar el nombre personalizado si se proporciona, sino usar el nombre del archivo
+            final_file_name = file_name if file_name else file_path.stem
+
+            # Insertar información del archivo
+            file_info = {
+                "file_name": final_file_name,
+                "structure": str(tuple(df.columns)),
+                "client_id": client_id
+            }
+            file_id = self.insert_record("files", file_info)
+            logger.info(f"File information inserted for {final_file_name}")
+            logger.info(f"File ID: {file_id}")
+
+            # Procesar documentos
+            vectors_data = []
+            for idx, row in df.iterrows():
+                formatted_data = []
+                for col in df.columns:
+                    value = row[col]
+                    # Manejar valores nulos
+                    if pd.isna(value):
+                        continue
+                    # Formatear números con precisión fija
+                    if isinstance(value, (float, np.floating)):
+                        formatted_value = f"{value:.2f}"
+                    else:
+                        formatted_value = str(value)
+                    formatted_data.append(f"{col}: {formatted_value}")
+
+                vectors_data.append({
+                    "row": idx + 1,
+                    "file_id": file_id,
+                    "data": '\n'.join(formatted_data),
+                    "vectors_status_id": 1  # Status inicial: Uploaded
+                })
+            
+            try:
+                # Convertir la lista de diccionarios a DataFrame antes de insertarla
+                vectors_df = pd.DataFrame(vectors_data)
+                self.insert_record("vectors", vectors_df)
+                logger.info(f"Successfully inserted {len(vectors_df)} vectors")
+            except Exception as e:
+                logger.error(f"Error inserting vectors: {str(e)}")
+                raise
+
+            result = {
+                "file_id": file_id,
+                "total_vectors": len(vectors_data),
+                "file_name": final_file_name,
+                "status": "success"
+            }
+            
+            logger.info(f"File processing completed successfully: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in upload_vectors_file: {str(e)}")
+            raise
+
+    def delete_file(self, file_id: str) -> bool:
+        """
+        Realiza un soft delete de un archivo y todos sus registros relacionados.
+        
+        Args:
+            file_id: UUID del archivo a eliminar
+
+        Returns:
+            bool: True si el archivo fue eliminado exitosamente, False si el archivo no existe 
+                o ya estaba eliminado
+
+        Raises:
+            ValueError: Si el file_id no es válido
+            psycopg.Error: Si ocurre un error en la base de datos
+        """
+        try:
+            # Verificar que el archivo existe
+            file_record = self.fetch_records(
+                "files",
+                conditions={"id": file_id}
+            )
+            
+            if file_record.empty:
+                logger.warning(f"File with id {file_id} not found")
+                return False
+
+            # Verificar si ya está eliminado
+            if pd.notnull(file_record['deleted_at'].iloc[0]):
+                logger.warning(f"File with id {file_id} is already deleted")
+                return False
+
+            # Ejecutar la función de delete_file en la base de datos usando parámetros
+            result = self.execute_query(
+                "SELECT delete_file(%s)",
+                (file_id,)
+            )
+            
+            # Obtener el resultado booleano
+            success = result.iloc[0, 0] if not result.empty else False
+            
+            if type(success) == np.bool_:
+                success = bool(success)
+
+            if success:
+                logger.info(f"File {file_id} and related records successfully deleted (soft delete)")
+            else:
+                logger.warning(f"File {file_id} could not be deleted")
+                
+            return success
+
+        except ValueError as e:
+            logger.error(f"Invalid file_id: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in delete_file: {str(e)}")
+            raise

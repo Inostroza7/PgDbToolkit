@@ -1,21 +1,38 @@
 # Changelog
 
+## [0.1.14] - 2024-10-05
+
+### Añadido
+- **`async_db`**: Se añadieron nuevos métodos asíncronos para operaciones con vectores, incluyendo `add_vector`, `update_vector`, `delete_vector` y `search_vector`.
+- **`sync_db`**: Se introdujeron nuevos métodos sincrónicos para manejar operaciones de base de datos con soporte mejorado para vectores.
+
+### Cambiado
+- **`PgDbToolkit`**: Se mejoró la gestión de conexiones y las capacidades de construcción de consultas.
+- **`AsyncPgDbToolkit`**: Se mejoró el rendimiento y la fiabilidad de las operaciones asíncronas.
+
+### Corregido
+- **`sync_db`**: Se resolvieron problemas con la sincronización de vectores y las inconsistencias de datos.
+- **`async_db`**: Se corrigieron errores relacionados con las operaciones asíncronas de vectores que causaban comportamientos inesperados.
+
+### Eliminado
+- **Código Redundante**: Se limpiaron funciones duplicadas y se mejoró la eficiencia del código.
+
 ## [0.1.13] - 2024-10-04
 
-### Added
-- **Added `vector_operations` to `async_db`:** Implemented asynchronous operations for handling vectors in the database.
-   - **`async def add_vector`:** Adds a vector to the specified table asynchronously.
-   - **`async def update_vector`:** Updates an existing vector in the specified table asynchronously.
-   - **`async def delete_vector`:** Deletes a vector from the specified table asynchronously.
-   - **`async def search_vector`:** Searches for vectors in the specified table based on given criteria asynchronously.
+### Añadido
+- **Añadido `vector_operations` a `async_db`:** Se implementaron operaciones asíncronas para manejar vectores en la base de datos.
+   - **`async def add_vector`:** Añade un vector a la tabla especificada de manera asíncrona.
+   - **`async def update_vector`:** Actualiza un vector existente en la tabla especificada de manera asíncrona.
+   - **`async def delete_vector`:** Elimina un vector de la tabla especificada de manera asíncrona.
+   - **`async def search_vector`:** Busca vectores en la tabla especificada basándose en criterios dados de manera asíncrona.
 
-### Changed
-- **`sync_db`**: Enhanced vector handling capabilities to support more complex operations.
-- **`async_db`**: Improved performance and reliability of asynchronous database operations.
+### Cambiado
+- **`sync_db`**: Se mejoraron las capacidades de manejo de vectores para soportar operaciones más complejas.
+- **`async_db`**: Se mejoró el rendimiento y la fiabilidad de las operaciones de base de datos asíncronas.
 
-### Fixed
-- **`sync_db`**: Resolved issues with vector synchronization that caused occasional data inconsistencies.
-- **`async_db`**: Fixed bugs related to asynchronous vector operations that led to unexpected behavior.
+### Corregido
+- **`sync_db`**: Se resolvieron problemas con la sincronización de vectores que causaban inconsistencias ocasionales de datos.
+- **`async_db`**: Se corrigieron errores relacionados con las operaciones de vectores asíncronas que llevaban a comportamientos inesperados.
 
 ## [0.1.12] - 2024-10-03
 

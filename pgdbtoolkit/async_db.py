@@ -11,6 +11,8 @@ from .log import Log
 from .base import BaseDbToolkit
 import json
 import numpy as np
+from typing import Optional, List, Dict, Union, Tuple
+from pathlib import Path
 
 logger = Log(__name__)
 
@@ -350,26 +352,40 @@ class AsyncPgDbToolkit(BaseDbToolkit):
 
     ###### Métodos de Registros ######
 
-    async def insert_record(self, table_name: str, record) -> None:
+    async def insert_record(self, table_name: str, record) -> Union[str, List[str]]:
         """
-        Inserta uno o más registros en la tabla especificada.
-
+        Inserta uno o más registros en la tabla especificada de manera asíncrona. 
+        Este método permite la inserción de registros en una tabla de PostgreSQL utilizando una conexión asíncrona.
+        
         Args:
-            table_name (str): Nombre de la tabla.
-            record: Puede ser un diccionario, DataFrame o ruta a un archivo CSV.
+            table_name (str): El nombre de la tabla en la que se insertarán los registros.
+            record (Union[dict, list, str, pd.DataFrame]): Los datos a insertar. Puede ser un diccionario, 
+                una lista de diccionarios, un archivo CSV o un DataFrame de Pandas. Si se proporciona un archivo CSV, 
+                se leerá y convertirá a un DataFrame.
+
+        Returns:
+            Union[str, List[str]]: Devuelve el ID del registro insertado si se inserta un solo registro, 
+            o una lista de IDs si se insertan múltiples registros. Esto se hace para mantener la consistencia 
+            con la versión síncrona del método.
 
         Raises:
-            psycopg.Error: Si ocurre un error durante la inserción.
+            ValueError: Si el argumento 'record' no es un diccionario, una lista de diccionarios, 
+            un archivo CSV o un DataFrame de Pandas, o si no hay registros para insertar.
+            psycopg.Error: Si ocurre un error durante la inserción en la base de datos.
         """
         if isinstance(record, str) and record.endswith('.csv') and os.path.isfile(record):
             record = pd.read_csv(record)
 
         if isinstance(record, pd.DataFrame):
             records = record.to_dict(orient='records')
+        elif isinstance(record, list):
+            if not record or not all(isinstance(item, dict) for item in record):
+                raise ValueError("Si se proporciona una lista, todos los elementos deben ser diccionarios")
+            records = record
         elif isinstance(record, dict):
             records = [record]
         else:
-            raise ValueError("El argumento 'record' debe ser un diccionario, un archivo CSV o un DataFrame.")
+            raise ValueError("El argumento 'record' debe ser un diccionario, una lista de diccionarios, un archivo CSV o un DataFrame de Pandas")
 
         if not records:
             raise ValueError("No hay registros para insertar.")
@@ -377,20 +393,33 @@ class AsyncPgDbToolkit(BaseDbToolkit):
         columns = list(records[0].keys())
         columns_str = ', '.join([self.sanitize_identifier(col) for col in columns])
         placeholders = ', '.join(['%s'] * len(columns))
-        query = f"INSERT INTO {self.sanitize_identifier(table_name)} ({columns_str}) VALUES ({placeholders})"
-        
+        query = f"""
+            INSERT INTO {self.sanitize_identifier(table_name)} ({columns_str}) 
+            VALUES ({placeholders})
+            RETURNING id
+        """
+
         values = [[record[col] for col in columns] for record in records]
 
         try:
             async with async_db_connection(self.db_config) as conn:
-                async with conn.cursor() as cur:
-                    for value in values:
-                        await cur.execute(query, value)
-                    await conn.commit()
-            logger.info(f"{len(records)} records inserted successfully into {table_name}.")
+                async with conn.transaction():
+                    if len(records) == 1:
+                        cursor = await conn.execute(query, values[0])
+                        inserted_id = (await cursor.fetchone())[0]
+                        logger.info(f"1 record inserted successfully into {table_name} with id {inserted_id}.")
+                        return str(inserted_id)
+                    else:
+                        inserted_ids = []
+                        for value in values:
+                            cursor = await conn.execute(query, value)
+                            inserted_ids.append(str((await cursor.fetchone())[0]))
+                        logger.info(f"{len(records)} records inserted successfully into {table_name}.")
+                        return inserted_ids
         except psycopg.Error as e:
             logger.error(f"Error inserting records into {table_name}: {e}")
             raise
+
 
     async def fetch_records(self, 
                           table_name: str, 
@@ -499,18 +528,20 @@ class AsyncPgDbToolkit(BaseDbToolkit):
         try:
             async with async_db_connection(self.db_config) as conn:
                 async with conn.transaction():
-                    # Ejecutar la consulta
+                    # Log de la query y parámetros para debugging
+                    logger.debug(f"Executing query: {query} with params: {params}")
+                    
                     cursor = await conn.execute(query, params)
                     
-                    # Verificar si la consulta produce resultados
                     if cursor.description is not None:
                         records = await cursor.fetchall()
                         columns = [desc.name for desc in cursor.description]
                         return pd.DataFrame(records, columns=columns)
-                    return pd.DataFrame()  # Retornar DataFrame vacío si no hay resultados
+                    return pd.DataFrame()
         except psycopg.Error as e:
             logger.error(f"Error executing query: {e}")
             raise
+
         
     ##### Métodos Auxiliares #####
 
@@ -662,67 +693,224 @@ class AsyncPgDbToolkit(BaseDbToolkit):
             logger.error(f"Error enabling vector extension: {e}")
             raise
 
-    async def search_vectors(self,
-                        vector: list,
-                        table_name: str = 'vectors',
-                        limit: int = 5,
-                        vector_column: str = 'embedding',
-                        agent_id: str = None,
-                        agent_column: str = 'agent_id',
-                        vector_status: int = None,
-                        vector_status_column: str = 'vector_status') -> pd.DataFrame:
+    async def search_vectors(self, 
+                            search_vector: List[float], 
+                            agent_id: Optional[str] = None,
+                            limit: int = 5) -> pd.DataFrame:
         """
-        Realiza una búsqueda asíncrona de vectores similares usando una función optimizada de PostgreSQL.
-
+        Realiza una búsqueda de vectores similares usando la función `search_vectors` en la base de datos.
+        
         Args:
-            vector (list): Vector de consulta para la búsqueda de similitud.
-            table_name (str, opcional): Nombre de la tabla donde se encuentran los vectores.
-            limit (int, opcional): Número máximo de resultados a retornar.
-            vector_column (str, opcional): Nombre de la columna que almacena los vectores.
-            agent_id (str, opcional): ID del agente para filtrar vectores por archivos asignados.
-            agent_column (str, opcional): Nombre de la columna que almacena el ID del agente.
-            vector_status (int, opcional): Estado del vector para filtrar los resultados.
-            vector_status_column (str, opcional): Nombre de la columna que almacena el estado del vector.
+            search_vector (List[float]): Vector de búsqueda con dimensión 1536.
+            limit (int): Número máximo de resultados a retornar. Por defecto es 5.
+            agent_id (Optional[str]): ID opcional del agente para filtrar resultados.
 
         Returns:
-            pd.DataFrame: DataFrame con los registros más similares, incluyendo puntuación de similitud.
-
-        Raises:
-            psycopg.Error: Si ocurre un error durante la búsqueda.
+            pd.DataFrame: DataFrame con los resultados de la búsqueda.
         """
-        try:
-            query = """
-                SELECT * FROM search_vectors(
-                    %s::vector,
-                    %s,
-                    %s,
-                    %s,
-                    %s::uuid,
-                    %s,
-                    %s::integer,
-                    %s
-                );
+        search_vector_str = f"ARRAY[{', '.join(map(str, search_vector))}]::vector"
+        
+        if agent_id:
+            query = f"""
+                SELECT * FROM search_vectors({search_vector_str}, {limit}, '{agent_id}'::uuid);
             """
-            
-            params = [
-                np.array(vector),
-                table_name,
-                limit,
-                vector_column,
-                agent_id,
-                agent_column,
-                vector_status,
-                vector_status_column
-            ]
-
+        else:
+            query = f"""
+                SELECT * FROM search_vectors({search_vector_str}, {limit}, NULL);
+            """
+        
+        try:
             async with async_db_connection(self.db_config) as conn:
                 async with conn.transaction():
-                    cursor = await conn.execute(query, params)
+                    cursor = await conn.execute(query)
                     records = await cursor.fetchall()
-                    columns = [desc.name for desc in cursor.description] if cursor.description else []
-                    
-            return pd.DataFrame(records, columns=columns)
-
+                    columns = [desc.name for desc in cursor.description]
+                    return pd.DataFrame(records, columns=columns)
         except psycopg.Error as e:
             logger.error(f"Error during vector search: {e}")
+            raise
+
+    async def search_records(self, 
+                            table_name: str, 
+                            search_term: str, 
+                            search_column: str = 'name', 
+                            additional_conditions: dict = None, 
+                            **kwargs) -> pd.DataFrame:
+        """
+        Realiza una búsqueda de texto en una columna específica.
+
+        Args:
+            table_name (str): Nombre de la tabla en la que buscar.
+            search_term (str): Término de búsqueda.
+            search_column (str): Nombre de la columna en la que buscar (por defecto 'name').
+            additional_conditions (dict): Condiciones adicionales para la búsqueda.
+            **kwargs: Argumentos adicionales para pasar a fetch_records (e.g., limit, offset).
+
+        Returns:
+            pd.DataFrame: DataFrame con los resultados de la búsqueda.
+        """
+        conditions = {(search_column, 'ILIKE'): search_term}
+        if additional_conditions:
+            conditions.update(additional_conditions)
+
+        return await self.fetch_records(table_name, conditions=conditions, **kwargs)
+    
+    async def upload_vectors_file(self,
+                                filepath: str,
+                                client_id: str,
+                                file_name: str = None) -> dict:
+        """
+        Procesa un archivo CSV/Excel, genera vectores y los almacena en la base de datos.
+
+        Args:
+            filepath: Ruta al archivo (CSV o Excel)
+            client_id: UUID del cliente
+            file_name: Nombre personalizado para el archivo (opcional)
+
+        Returns:
+            dict: Información del procesamiento (file_id, total_vectors, file_name)
+
+        Raises:
+            ValueError: Si el cliente no existe o el formato de archivo no es soportado
+            FileNotFoundError: Si el archivo no existe
+        """
+        try:
+            # Validar archivo
+            file_path = Path(filepath)
+            if not file_path.exists():
+                raise FileNotFoundError(f"File not found: {filepath}")
+            logger.info(f"Processing file: {filepath}")
+
+            # Validar cliente
+            client_exists = await self.fetch_records(
+                "clients",
+                conditions={"id": client_id}
+            )
+            if client_exists.empty:
+                raise ValueError(f"Client with id {client_id} not found")
+            logger.info(f"Client {client_id} validated successfully")
+
+            # Leer archivo
+            try:
+                if file_path.suffix.lower() == '.csv':
+                    df = pd.read_csv(filepath)
+                elif file_path.suffix.lower() in ['.xlsx', '.xls']:
+                    df = pd.read_excel(filepath)
+                else:
+                    raise ValueError("Unsupported file format. Use CSV or Excel files.")
+            except Exception as e:
+                raise ValueError(f"Error reading file: {str(e)}")
+            
+            logger.info(f"File {filepath} read successfully with {len(df)} rows")
+
+            final_file_name = file_name if file_name else file_path.stem
+
+            # Insertar información del archivo
+            file_info = {
+                "file_name": final_file_name,
+                "structure": str(tuple(df.columns)),
+                "client_id": client_id
+            }
+            file_id = await self.insert_record("files", file_info)
+            logger.info(f"File information inserted for {final_file_name}")
+            logger.info(f"File ID: {file_id}")
+
+            # Procesar documentos
+            vectors_data = []
+            for idx, row in df.iterrows():
+                formatted_data = []
+                for col in df.columns:
+                    value = row[col]
+                    if pd.isna(value):
+                        continue
+                    if isinstance(value, (float, np.floating)):
+                        formatted_value = f"{value:.2f}"
+                    else:
+                        formatted_value = str(value)
+                    formatted_data.append(f"{col}: {formatted_value}")
+
+                vectors_data.append({
+                    "row": idx + 1,
+                    "file_id": file_id,
+                    "data": '\n'.join(formatted_data),
+                    "vectors_status_id": 1
+                })
+            
+            try:
+                vectors_df = pd.DataFrame(vectors_data)
+                await self.insert_record("vectors", vectors_df)
+                logger.info(f"Successfully inserted {len(vectors_df)} vectors")
+            except Exception as e:
+                logger.error(f"Error inserting vectors: {str(e)}")
+                raise
+
+            result = {
+                "file_id": file_id,
+                "total_vectors": len(vectors_data),
+                "file_name": final_file_name,
+                "status": "success"
+            }
+            
+            logger.info(f"File processing completed successfully: {result}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in upload_vectors_file: {str(e)}")
+            raise
+
+    async def delete_file(self, file_id: str) -> bool:
+        """
+        Realiza un soft delete de un archivo y todos sus registros relacionados.
+        
+        Args:
+            file_id: UUID del archivo a eliminar
+
+        Returns:
+            bool: True si el archivo fue eliminado exitosamente, False si el archivo no existe 
+                o ya estaba eliminado
+
+        Raises:
+            ValueError: Si el file_id no es válido
+            psycopg.Error: Si ocurre un error en la base de datos
+        """
+        try:
+            # Verificar que el archivo existe
+            file_record = await self.fetch_records(
+                "files",
+                conditions={"id": file_id}
+            )
+            
+            if file_record.empty:
+                logger.warning(f"File with id {file_id} not found")
+                return False
+
+            # Verificar si ya está eliminado
+            if pd.notnull(file_record['deleted_at'].iloc[0]):
+                logger.warning(f"File with id {file_id} is already deleted")
+                return False
+
+            # Ejecutar la función de delete_file en la base de datos
+            result = await self.execute_query(
+                "SELECT delete_file(%s)",
+                (file_id,)
+            )
+            
+            # Obtener el resultado booleano
+            success = result.iloc[0, 0] if not result.empty else False
+            
+            if type(success) == np.bool_:
+                success = bool(success)
+
+            if success:
+                logger.info(f"File {file_id} and related records successfully deleted (soft delete)")
+            else:
+                logger.warning(f"File {file_id} could not be deleted")
+                
+            return success
+
+        except ValueError as e:
+            logger.error(f"Invalid file_id: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in delete_file: {str(e)}")
             raise
