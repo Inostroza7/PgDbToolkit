@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.15] - 2024-10-06
+
+### Cambiado
+- **`async_db`**: Se cambió el nombre del método `insert_record` a `insert_records` para mejorar la comprensión de que se pueden insertar múltiples registros.
+- **`sync_db`**: Se cambió el nombre del método `insert_record` a `insert_records` para mejorar la comprensión de que se pueden insertar múltiples registros.
+
+
 ## [0.1.14] - 2024-10-05
 
 ### Añadido

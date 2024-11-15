@@ -420,7 +420,7 @@ class PgDbToolkit(BaseDbToolkit):
 
     ###### Métodos de Registros ######
 
-    def insert_record(self, table_name: str, record) -> Union[str, List[str]]:
+    def insert_records(self, table_name: str, record) -> Union[str, List[str]]:
         """
         Inserta uno o más registros en la tabla especificada de manera sincrónica.
         Soporta la inserción desde un diccionario, una lista de diccionarios, un archivo CSV o un DataFrame de Pandas.
@@ -442,20 +442,20 @@ class PgDbToolkit(BaseDbToolkit):
 
         Examples:
             # Insertar un solo registro
-            >>> id = db.insert_record("cars", {"name": "Porsche"})
+            >>> id = db.insert_records("cars", {"name": "Porsche"})
             
             # Insertar múltiples registros desde una lista
-            >>> ids = db.insert_record("cars", [
+            >>> ids = db.insert_records("cars", [
             ...     {"name": "Porsche"},
             ...     {"name": "Ferrari"},
             ...     {"name": "Audi"}
             ... ])
             
             # Insertar desde un DataFrame
-            >>> ids = db.insert_record("cars", df)
+            >>> ids = db.insert_records("cars", df)
             
             # Insertar desde un CSV
-            >>> ids = db.insert_record("cars", "cars.csv")
+            >>> ids = db.insert_records("cars", "cars.csv")
         """
         # Si el record es un archivo CSV
         if isinstance(record, str) and record.endswith('.csv') and os.path.isfile(record):
@@ -956,7 +956,7 @@ class PgDbToolkit(BaseDbToolkit):
                 "structure": str(tuple(df.columns)),
                 "client_id": client_id
             }
-            file_id = self.insert_record("files", file_info)
+            file_id = self.insert_records("files", file_info)
             logger.info(f"File information inserted for {final_file_name}")
             logger.info(f"File ID: {file_id}")
 
@@ -986,7 +986,7 @@ class PgDbToolkit(BaseDbToolkit):
             try:
                 # Convertir la lista de diccionarios a DataFrame antes de insertarla
                 vectors_df = pd.DataFrame(vectors_data)
-                self.insert_record("vectors", vectors_df)
+                self.insert_records("vectors", vectors_df)
                 logger.info(f"Successfully inserted {len(vectors_df)} vectors")
             except Exception as e:
                 logger.error(f"Error inserting vectors: {str(e)}")

@@ -352,26 +352,43 @@ class AsyncPgDbToolkit(BaseDbToolkit):
 
     ###### Métodos de Registros ######
 
-    async def insert_record(self, table_name: str, record) -> Union[str, List[str]]:
+    async def insert_records(self, table_name: str, record) -> Union[str, List[str]]:
         """
-        Inserta uno o más registros en la tabla especificada de manera asíncrona. 
+        Inserta uno o más registros en la tabla especificada de manera asíncrona.
         Este método permite la inserción de registros en una tabla de PostgreSQL utilizando una conexión asíncrona.
-        
+
         Args:
-            table_name (str): El nombre de la tabla en la que se insertarán los registros.
-            record (Union[dict, list, str, pd.DataFrame]): Los datos a insertar. Puede ser un diccionario, 
-                una lista de diccionarios, un archivo CSV o un DataFrame de Pandas. Si se proporciona un archivo CSV, 
-                se leerá y convertirá a un DataFrame.
+            table_name (str): Nombre de la tabla en la que se insertará el registro.
+            record (Union[dict, List[dict], str, pd.DataFrame]): Los datos a insertar. Puede ser:
+                - Un diccionario individual
+                - Una lista de diccionarios
+                - Una ruta a un archivo CSV
+                - Un DataFrame de Pandas
 
         Returns:
-            Union[str, List[str]]: Devuelve el ID del registro insertado si se inserta un solo registro, 
-            o una lista de IDs si se insertan múltiples registros. Esto se hace para mantener la consistencia 
-            con la versión síncrona del método.
+            Union[str, List[str]]: ID o lista de IDs de los registros insertados.
 
         Raises:
-            ValueError: Si el argumento 'record' no es un diccionario, una lista de diccionarios, 
-            un archivo CSV o un DataFrame de Pandas, o si no hay registros para insertar.
-            psycopg.Error: Si ocurre un error durante la inserción en la base de datos.
+            psycopg.Error: Si ocurre un error durante la inserción.
+            ValueError: Si el argumento record no es válido o está vacío.
+
+        Examples:
+            # Insertar un solo registro
+            >>> id = await db.insert_records("cars", {"name": "Porsche"})
+
+            # Insertar múltiples registros desde una lista
+            >>> ids = await db.insert_records("cars", [
+            ...     {"name": "Porsche"},
+            ...     {"name": "Ferrari"},
+            ...     {"name": "Audi"}
+            ... ])
+
+            # Insertar desde un DataFrame
+            >>> ids = await db.insert_records("cars", df)
+
+            # Insertar desde un CSV
+            >>> ids = await db.insert_records("cars", "cars.csv")
+
         """
         if isinstance(record, str) and record.endswith('.csv') and os.path.isfile(record):
             record = pd.read_csv(record)
@@ -811,7 +828,7 @@ class AsyncPgDbToolkit(BaseDbToolkit):
                 "structure": str(tuple(df.columns)),
                 "client_id": client_id
             }
-            file_id = await self.insert_record("files", file_info)
+            file_id = await self.insert_records("files", file_info)
             logger.info(f"File information inserted for {final_file_name}")
             logger.info(f"File ID: {file_id}")
 
@@ -838,7 +855,7 @@ class AsyncPgDbToolkit(BaseDbToolkit):
             
             try:
                 vectors_df = pd.DataFrame(vectors_data)
-                await self.insert_record("vectors", vectors_df)
+                await self.insert_records("vectors", vectors_df)
                 logger.info(f"Successfully inserted {len(vectors_df)} vectors")
             except Exception as e:
                 logger.error(f"Error inserting vectors: {str(e)}")
