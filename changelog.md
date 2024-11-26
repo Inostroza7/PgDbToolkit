@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.16] - 2024-10-07
+
+### Corregido
+- **`async_db`**: Se corrigió el manejo de valores `None` en las condiciones de búsqueda para que se traduzcan correctamente a `IS NULL` en SQL.
+- **`sync_db`**: Se corrigió el manejo de valores `None` en las condiciones de búsqueda para que se traduzcan correctamente a `IS NULL` en SQL.
+
+
 ## [0.1.15] - 2024-10-06
 
 ### Cambiado

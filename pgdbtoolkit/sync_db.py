@@ -776,9 +776,13 @@ class PgDbToolkit(BaseDbToolkit):
             if isinstance(key, tuple):
                 column, operator = key
                 where_clauses.append(f"{self.sanitize_identifier(column)} {operator} %s")
+                params.append(value)
             else:
-                where_clauses.append(f"{self.sanitize_identifier(key)} = %s")
-            params.append(value)
+                if value is None:
+                    where_clauses.append(f"{self.sanitize_identifier(key)} IS NULL")
+                else:
+                    where_clauses.append(f"{self.sanitize_identifier(key)} = %s")
+                    params.append(value)
         
         return " AND ".join(where_clauses), params
 
