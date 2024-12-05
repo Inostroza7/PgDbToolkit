@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.17] - 2024-12-05
+
+### Actualización
+- **`aimanagertoolkit`**: Actualización a la versión 1.17
+
+
 ## [0.1.16] - 2024-10-07
 
 ### Corregido
