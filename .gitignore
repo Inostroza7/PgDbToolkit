@@ -165,3 +165,4 @@ update.md
 update.py
 .DS_Store
 update.ipynb
+.env.test
