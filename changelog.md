@@ -1,4 +1,30 @@
 # Changelog
+## [0.1.18] - 2025-04-29
+
+### Añadido
+- **Documentación completa**: Se ha actualizado el README con instrucciones detalladas de uso y ejemplos para todas las funcionalidades.
+- **Cambio de licencia**: Se cambió la licencia de MIT a Apache 2.0, proporcionando mayor protección de patentes y claridad en términos de contribución.
+- **Soporte mejorado para validación de datos**: Nuevas funciones de validación para tipos comunes como UUID, fechas y objetos JSON.
+- **Función `search_records`**: Mejora en las funcionalidades de búsqueda textual con condiciones adicionales configurables.
+- **Documentación del sistema de migraciones**: Guía detallada sobre cómo usar el sistema de migraciones para gestionar esquemas de bases de datos.
+- **Manejo avanzado de transacciones**: Soporte para funciones de referencia a resultados previos en transacciones.
+
+### Mejorado
+- **Ejemplos de código**: Se han mejorado los ejemplos para operaciones vectoriales utilizando pgvector.
+- **Documentación del API**: Clarificación de las funciones disponibles para operaciones de base de datos.
+- **Rendimiento en operaciones por lotes**: Optimización de `bulk_insert_with_copy` para manejar mayores volúmenes de datos.
+- **Manejo de conexiones**: Mayor robustez en la gestión de conexiones tanto sincrónicas como asincrónicas.
+- **Validación de condiciones de consulta**: Mejor manejo de valores NULL en condiciones para traducirlos correctamente a IS NULL en SQL.
+- **Gestión de pools de conexiones**: Mejoras en las estrategias de reconexión y cierre de conexiones.
+- **Soporte para vectores**: Integración más fluida con la extensión pgvector para búsquedas semánticas.
+
+### Corregido
+- **Referencia de funciones**: Se eliminaron referencias a funciones que ya no existen en el código base.
+- **Consistencia de versiones**: Se aseguró que la documentación refleje exactamente la implementación actual.
+- **Manejo de errores en transacciones**: Mejor recuperación ante errores transaccionales con rollback automático.
+- **Sanitización de identificadores**: Corrección en la sanitización de nombres de tablas y columnas para prevenir inyección SQL.
+- **Manejo de tipos de datos complejos**: Corrección en la serialización/deserialización de tipos como JSON y arrays.
+- **Propagación de excepciones**: Mejora en la jerarquía de excepciones para facilitar el manejo de errores específicos.
 
 ## [0.1.17] - 2024-12-05
 
