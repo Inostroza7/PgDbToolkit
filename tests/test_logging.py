@@ -1,28 +1,30 @@
 import logging
 import pytest
-from pgdbtoolkit import log
+from pgdbtoolkit.log import Log
+
+# Crear una instancia de Log para los tests
+logger = Log("test_logger")
 
 def test_logging_info(caplog):
-    log.setLevel(logging.INFO)
+    # Usar el método de clase para establecer el nivel
+    Log.set_level(logging.INFO)
     with caplog.at_level(logging.INFO):
-        log.info('This is an info message')
+        logger.info('This is an info message')
         assert 'This is an info message' in caplog.text
 
 def test_logging_error(caplog):
     with caplog.at_level(logging.ERROR):
-        log.error('This is an error message')
+        logger.error('This is an error message')
         assert 'This is an error message' in caplog.text
 
 def test_logging_to_file(tmpdir):
     logfile = tmpdir.join("test.log")
-    log_file_handler = logging.FileHandler(logfile)
-    log.logger.addHandler(log_file_handler)
+    # Configurar el log para que escriba a un archivo
+    Log.configure(log_file=str(logfile))
     
-    log.error('This is an error written to file')
+    logger.error('This is an error written to file')
     
     with open(logfile, 'r') as f:
         content = f.read()
     
     assert 'This is an error written to file' in content
-
-    log.logger.removeHandler(log_file_handler)

@@ -1,6 +1,15 @@
 from setuptools import setup, find_packages
-from pgdbtoolkit.__version__ import __version__
 from pathlib import Path
+import re
+
+# Leer la versión desde el archivo __version__.py sin importarlo
+with open('pgdbtoolkit/__version__.py', 'r') as f:
+    version_file = f.read()
+    version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", version_file, re.M)
+    if version_match:
+        __version__ = version_match.group(1)
+    else:
+        raise RuntimeError("No se encontró la versión en pgdbtoolkit/__version__.py")
 
 with Path("requirements.txt").open() as f:
     install_requires = f.read().splitlines()
