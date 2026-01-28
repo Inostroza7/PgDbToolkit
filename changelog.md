@@ -1,7 +1,15 @@
 # Changelog
+
+## [0.1.19] - 2025-01-28
+
+### Eliminado
+
+- **`aimanagertoolkit`**: Se eliminó la dependencia de `requirements.txt` por no utilizarse en el código del proyecto.
+
 ## [0.1.18] - 2025-04-29
 
 ### Añadido
+
 - **Documentación completa**: Se ha actualizado el README con instrucciones detalladas de uso y ejemplos para todas las funcionalidades.
 - **Cambio de licencia**: Se cambió la licencia de MIT a Apache 2.0, proporcionando mayor protección de patentes y claridad en términos de contribución.
 - **Soporte mejorado para validación de datos**: Nuevas funciones de validación para tipos comunes como UUID, fechas y objetos JSON.
@@ -10,6 +18,7 @@
 - **Manejo avanzado de transacciones**: Soporte para funciones de referencia a resultados previos en transacciones.
 
 ### Mejorado
+
 - **Ejemplos de código**: Se han mejorado los ejemplos para operaciones vectoriales utilizando pgvector.
 - **Documentación del API**: Clarificación de las funciones disponibles para operaciones de base de datos.
 - **Rendimiento en operaciones por lotes**: Optimización de `bulk_insert_with_copy` para manejar mayores volúmenes de datos.
@@ -19,6 +28,7 @@
 - **Soporte para vectores**: Integración más fluida con la extensión pgvector para búsquedas semánticas.
 
 ### Corregido
+
 - **Referencia de funciones**: Se eliminaron referencias a funciones que ya no existen en el código base.
 - **Consistencia de versiones**: Se aseguró que la documentación refleje exactamente la implementación actual.
 - **Manejo de errores en transacciones**: Mejor recuperación ante errores transaccionales con rollback automático.
@@ -29,110 +39,128 @@
 ## [0.1.17] - 2024-12-05
 
 ### Actualización
-- **`aimanagertoolkit`**: Actualización a la versión 1.17
 
+- **`aimanagertoolkit`**: Actualización a la versión 1.17
 
 ## [0.1.16] - 2024-10-07
 
 ### Corregido
+
 - **`async_db`**: Se corrigió el manejo de valores `None` en las condiciones de búsqueda para que se traduzcan correctamente a `IS NULL` en SQL.
 - **`sync_db`**: Se corrigió el manejo de valores `None` en las condiciones de búsqueda para que se traduzcan correctamente a `IS NULL` en SQL.
-
 
 ## [0.1.15] - 2024-10-06
 
 ### Cambiado
+
 - **`async_db`**: Se cambió el nombre del método `insert_record` a `insert_records` para mejorar la comprensión de que se pueden insertar múltiples registros.
 - **`sync_db`**: Se cambió el nombre del método `insert_record` a `insert_records` para mejorar la comprensión de que se pueden insertar múltiples registros.
-
 
 ## [0.1.14] - 2024-10-05
 
 ### Añadido
+
 - **`async_db`**: Se añadieron nuevos métodos asíncronos para operaciones con vectores, incluyendo `add_vector`, `update_vector`, `delete_vector` y `search_vector`.
 - **`sync_db`**: Se introdujeron nuevos métodos sincrónicos para manejar operaciones de base de datos con soporte mejorado para vectores.
 
 ### Cambiado
+
 - **`PgDbToolkit`**: Se mejoró la gestión de conexiones y las capacidades de construcción de consultas.
 - **`AsyncPgDbToolkit`**: Se mejoró el rendimiento y la fiabilidad de las operaciones asíncronas.
 
 ### Corregido
+
 - **`sync_db`**: Se resolvieron problemas con la sincronización de vectores y las inconsistencias de datos.
 - **`async_db`**: Se corrigieron errores relacionados con las operaciones asíncronas de vectores que causaban comportamientos inesperados.
 
 ### Eliminado
+
 - **Código Redundante**: Se limpiaron funciones duplicadas y se mejoró la eficiencia del código.
 
 ## [0.1.13] - 2024-10-04
 
 ### Añadido
+
 - **Añadido `vector_operations` a `async_db`:** Se implementaron operaciones asíncronas para manejar vectores en la base de datos.
-   - **`async def add_vector`:** Añade un vector a la tabla especificada de manera asíncrona.
-   - **`async def update_vector`:** Actualiza un vector existente en la tabla especificada de manera asíncrona.
-   - **`async def delete_vector`:** Elimina un vector de la tabla especificada de manera asíncrona.
-   - **`async def search_vector`:** Busca vectores en la tabla especificada basándose en criterios dados de manera asíncrona.
+  - **`async def add_vector`:** Añade un vector a la tabla especificada de manera asíncrona.
+  - **`async def update_vector`:** Actualiza un vector existente en la tabla especificada de manera asíncrona.
+  - **`async def delete_vector`:** Elimina un vector de la tabla especificada de manera asíncrona.
+  - **`async def search_vector`:** Busca vectores en la tabla especificada basándose en criterios dados de manera asíncrona.
 
 ### Cambiado
+
 - **`sync_db`**: Se mejoraron las capacidades de manejo de vectores para soportar operaciones más complejas.
 - **`async_db`**: Se mejoró el rendimiento y la fiabilidad de las operaciones de base de datos asíncronas.
 
 ### Corregido
+
 - **`sync_db`**: Se resolvieron problemas con la sincronización de vectores que causaban inconsistencias ocasionales de datos.
 - **`async_db`**: Se corrigieron errores relacionados con las operaciones de vectores asíncronas que llevaban a comportamientos inesperados.
 
 ## [0.1.12] - 2024-10-03
 
 ### Added
+
 - **Added `search_records` to `sync_db`:** Agrega la función search records que realiza una búsqueda de texto en una columna específica.
 
 ## [0.1.11] - 2024-10-03
 
 ### Added
+
 - **Fix `sync_db`:** Fix conexión que permitia solamente manejo de vectores ahora se pueden hacer query sin registro de vectores
 
 ## [0.1.10] - 2024-10-03
 
 ### Added
+
 - **Added `sync_db`:** Ahora permite agregar order_direction 'ASC' y 'DESC'
 
 ## [0.1.9] - 2024-10-03
 
 ### Added
-- **Added `sync_db`:** Ahora permite agregar order_by y limit 
+
+- **Added `sync_db`:** Ahora permite agregar order_by y limit
 
 ## [0.1.8] - 2024-10-02
 
 ### Added
+
 - **Fix `sync_db`:** Fix update_vectors
 
 ## [0.1.7] - 2024-10-02
 
 ### Added
+
 - **Fix `sync_db`:** Fix search_vectors
 
 ## [0.1.6] - 2024-09-26
 
 ### Added
+
 - **x `sync_db`:** Ahora permite recibir Pandas Dataframe y CSV
 
 ## [0.1.5] - 2024-09-24
 
 ### Added
+
 - **Fix `sync_db`:** Fix del sync_db
 
 ## [0.1.4] - 2024-09-24
 
 ### Added
+
 - **Fix `sync_db`:** Fix del sync_db
 
 ## [0.1.3] - 2024-09-02
 
 ### Added
+
 - **Fix `log`:** Fix de logs.
 
 ## [0.1.2] - 2024-09-02
 
 ### Added
+
 - **Nueva clase `AsyncPgDbToolkit`:** Implementada para gestionar operaciones asíncronas en la base de datos.
   - **`async def create_database`:** Crea una base de datos en el servidor PostgreSQL de manera asíncrona.
   - **`async def delete_database`:** Elimina una base de datos en el servidor PostgreSQL de manera asíncrona.
@@ -151,9 +179,11 @@
   - **`def build_query`:** Método auxiliar para la construcción de queries SQL basado en el tipo de operación.
 
 ### Changed
+
 - **`PgDbToolkit`**: Añadido manejo de finalización de conexiones antes de eliminar una base de datos.
 
 ### Removed
+
 - **Eliminación de código redundante:** Limpieza de funciones duplicadas y mejoras en la eficiencia del código.
 
 ---
@@ -161,6 +191,7 @@
 ## [0.1.1] - 2024-08-31
 
 ### Added
+
 - **Primera versión de `PgDbToolkit`:** Gestión de operaciones sincrónicas en bases de datos PostgreSQL.
   - **`def create_database`:** Crea una nueva base de datos en el servidor PostgreSQL.
   - **`def delete_database`:** Elimina una base de datos en el servidor PostgreSQL.
@@ -177,6 +208,7 @@
   - **`def delete_record`:** Elimina un registro de la tabla especificada basado en las condiciones.
   - **`def execute_query`:** Ejecuta un query SQL personalizado.
   - **`def build_query`:** Método auxiliar para la construcción de queries SQL basado en el tipo de operación.
+
 ```
 
 ### ROADMAP
@@ -201,3 +233,4 @@
 5. **Métodos de migración de esquema:**
    - `migrate_schema`: Para aplicar cambios en el esquema a través de migraciones.
 
+```
